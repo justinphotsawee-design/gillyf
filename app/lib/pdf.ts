@@ -1,55 +1,94 @@
 import { PDFDocument } from "pdf-lib";
 
-/**
- * Builds a simple order-summary PDF containing the uploaded design images.
- * `images` maps a slot label (e.g. "Cover Front") to its uploaded image URL.
- */
 export async function createPDF(
   images: Record<string, string>
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  const page = pdf.addPage([595, 842]);
-  const { height } = page.getSize();
 
-  page.drawText("NFC Keychain Order", {
-    x: 50,
-    y: height - 50,
-    size: 20,
+  // A4 แนวตั้ง
+  const page = pdf.addPage([595, 842]);
+
+  page.drawText("NFC CD Keychain Artwork", {
+    x: 40,
+    y: 810,
+    size: 18,
   });
 
-  let cursorY = height - 90;
+  const positions = [
+    { x: 30, y: 560 }, // Cover Front
+    { x: 310, y: 560 }, // Cover Back
 
-  for (const [label, url] of Object.entries(images)) {
+    { x: 30, y: 320 }, // Back Outer
+    { x: 310, y: 320 }, // Back Inner
+
+    { x: 30, y: 80 }, // Packaging Left
+    { x: 310, y: 80 }, // Packaging Right
+  ];
+
+  const entries = Object.entries(images);
+
+  for (let i = 0; i < Math.min(entries.length, 6); i++) {
+    const [label, url] = entries[i];
+
     if (!url) continue;
 
     try {
-      const res = await fetch(url);
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const response = await fetch(url);
+      const bytes = new Uint8Array(await response.arrayBuffer());
 
-      const isPng = url.toLowerCase().includes(".png");
+      const isPng =
+        url.toLowerCase().includes(".png") ||
+        bytes[0] === 137;
+
       const image = isPng
         ? await pdf.embedPng(bytes)
         : await pdf.embedJpg(bytes);
 
-      const maxWidth = 200;
-      const scale = maxWidth / image.width;
-      const imgHeight = image.height * scale;
+      const boxWidth = 250;
+      const boxHeight = 160;
 
-      if (cursorY - imgHeight < 40) {
-        cursorY = height - 40;
-      }
+      const scale = Math.min(
+        boxWidth / image.width,
+        boxHeight / image.height
+      );
 
-      page.drawText(label, { x: 50, y: cursorY - 15, size: 12 });
-      page.drawImage(image, {
-        x: 50,
-        y: cursorY - 20 - imgHeight,
-        width: maxWidth,
-        height: imgHeight,
+      const width = image.width * scale;
+      const height = image.height * scale;
+
+      const x =
+        positions[i].x + (boxWidth - width) / 2;
+
+      const y =
+        positions[i].y + (boxHeight - height) / 2;
+
+      // ชื่อช่อง
+      page.drawText(label, {
+        x: positions[i].x,
+        y: positions[i].y + boxHeight + 10,
+        size: 10,
       });
 
-      cursorY -= imgHeight + 50;
+      // กรอบ
+      page.drawRectangle({
+        x: positions[i].x,
+        y: positions[i].y,
+        width: boxWidth,
+        height: boxHeight,
+        borderWidth: 1,
+      });
+
+      // รูป
+      page.drawImage(image, {
+        x,
+        y,
+        width,
+        height,
+      });
     } catch (error) {
-      console.error(`Failed to embed image for ${label}:`, error);
+      console.error(
+        `Failed to embed image for ${label}`,
+        error
+      );
     }
   }
 
