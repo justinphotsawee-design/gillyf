@@ -1,4 +1,4 @@
-import { resend } from "@/lib/resend";
+import { getResend } from "@/lib/resend";
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     // Using Resend's shared test sender since it works without verifying
     // your own domain first. Once you verify a domain in Resend, switch
     // this to something like "orders@yourdomain.com".
-    await resend.emails.send({
+    await getResend().emails.send({
       from: "onboarding@resend.dev",
       to: process.env.ORDER_EMAIL!,
       subject: "New Keychain Order",
