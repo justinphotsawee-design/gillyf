@@ -19,9 +19,25 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
-    const result = await cloudinary.uploader.upload(base64);
+    // Upload the raw bytes directly instead of a base64 data URL — base64
+    // inflates the payload by ~33% and costs CPU time to encode, which adds
+    // up on phone photos.
+    const result = await new Promise<{ secure_url: string }>(
+      (resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { resource_type: "image" },
+          (error, uploadResult) => {
+            if (error || !uploadResult) {
+              reject(error ?? new Error("Upload returned no result"));
+              return;
+            }
+            resolve(uploadResult);
+          }
+        );
+        uploadStream.end(buffer);
+      }
+    );
 
     return Response.json({ url: result.secure_url });
   } catch (error) {

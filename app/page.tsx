@@ -13,18 +13,24 @@ const slots = [
 ];
 
 export default function Home() {
-  const [activeSlot, setActiveSlot] = useState("coverFront");
   const [uploadedUrls, setUploadedUrls] = useState<Record<string, string>>(
     {}
   );
+  const [uploadingSlots, setUploadingSlots] = useState<
+    Record<string, boolean>
+  >({});
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const activeLabel = slots.find((s) => s.id === activeSlot)?.label ?? "";
+  const anyUploading = Object.values(uploadingSlots).some(Boolean);
 
   function handleUploaded(slotId: string, url: string) {
     setUploadedUrls((prev) => ({ ...prev, [slotId]: url }));
+  }
+
+  function handleUploadingChange(slotId: string, uploading: boolean) {
+    setUploadingSlots((prev) => ({ ...prev, [slotId]: uploading }));
   }
 
   async function handleSaveDesign() {
@@ -104,65 +110,122 @@ export default function Home() {
     return result;
   }
 
+  const completedCount = slots.filter((s) => uploadedUrls[s.id]).length;
+
   return (
-    <main className="min-h-screen bg-zinc-100">
-      <div className="max-w-7xl mx-auto p-8">
-        <h1 className="text-5xl font-bold mb-2">
+    <main className="min-h-screen bg-background relative overflow-hidden">
+      {/* Soft decorative glow — purely atmospheric, ignore for layout */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-brand/10 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/3 -left-40 h-96 w-96 rounded-full bg-brand/5 blur-3xl"
+      />
+
+      {/* Header */}
+      <header className="relative border-b border-brand/10 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-8 py-4 flex items-center gap-3">
+          <div className="h-11 w-11 shrink-0 rounded-full border-2 border-brand flex items-center justify-center bg-white">
+            <span className="font-script text-2xl text-brand leading-none">
+              G
+            </span>
+          </div>
+          <div className="leading-tight">
+            <p className="font-script text-2xl text-brand -mb-1">Gilly</p>
+            <p className="text-[0.6rem] tracking-[0.35em] text-brand-dark/60 uppercase">
+              Gift &amp; Craft
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <div className="relative max-w-7xl mx-auto px-8 py-12">
+        <h1 className="font-display text-4xl md:text-5xl font-bold mb-3 text-foreground">
           Customize Your NFC CD Keychain
         </h1>
 
-        <p className="text-zinc-500 mb-8">
-          Upload and customize each section.
+        <p className="text-foreground/60 mb-10 max-w-xl">
+          Upload and position artwork for each section — we&apos;ll turn it
+          into print-ready artwork.
         </p>
 
-        <div className="grid md:grid-cols-3 gap-4 mb-10">
-          {slots.map((slot) => (
-            <button
-              key={slot.id}
-              onClick={() => setActiveSlot(slot.id)}
-              className={`rounded-xl p-5 border transition ${
-                activeSlot === slot.id
-                  ? "bg-black text-white"
-                  : "bg-white hover:bg-zinc-50"
-              }`}
-            >
-              {slot.label}
-              {uploadedUrls[slot.id] && (
-                <span className="ml-2 text-xs text-emerald-500">✓</span>
-              )}
-            </button>
-          ))}
+        {/* Progress */}
+        <div className="mb-6 flex items-center justify-between text-sm">
+          <span className="font-medium text-foreground/70">
+            {completedCount} of {slots.length} sections added
+          </span>
+          <span className="text-brand font-semibold">
+            {Math.round((completedCount / slots.length) * 100)}%
+          </span>
+        </div>
+        <div className="mb-10 h-1.5 w-full rounded-full bg-brand/10 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-brand transition-all duration-500"
+            style={{ width: `${(completedCount / slots.length) * 100}%` }}
+          />
         </div>
 
-        <div className="bg-white rounded-2xl shadow p-8">
-          <UploadEditor
-            key={activeSlot}
-            slot={activeLabel}
-            onUploaded={(url) => handleUploaded(activeSlot, url)}
-          />
+        <div className="grid lg:grid-cols-2 gap-6 mb-10">
+          {slots.map((slot) => {
+            const thumb = uploadedUrls[slot.id];
+            return (
+              <div
+                key={slot.id}
+                className="relative bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 border border-brand/10"
+              >
+                {thumb && (
+                  <span className="absolute top-6 right-6 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs">
+                    ✓
+                  </span>
+                )}
+                <UploadEditor
+                  slot={slot.label}
+                  onUploaded={(url) => handleUploaded(slot.id, url)}
+                  onUploadingChange={(uploading) =>
+                    handleUploadingChange(slot.id, uploading)
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
 
-          <div className="flex gap-4 mt-6">
+        <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-8 border border-brand/10">
+          <div className="flex flex-wrap gap-4">
             <button
               onClick={handleSaveDesign}
-              disabled={saving}
-              className="bg-black text-white px-6 py-3 rounded-xl disabled:opacity-50"
+              disabled={saving || anyUploading}
+              className="bg-brand hover:bg-brand-dark text-white px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition shadow-lg shadow-brand/20 hover:shadow-brand/30"
             >
               {saving ? "Saving..." : "Save Design"}
             </button>
 
             <button
               onClick={handleGeneratePDF}
-              disabled={generating}
-              className="border px-6 py-3 rounded-xl disabled:opacity-50"
+              disabled={generating || anyUploading}
+              className="border border-brand text-brand hover:bg-brand/5 px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition"
             >
               {generating ? "Generating..." : "Generate PDF"}
             </button>
           </div>
 
-          {statusMessage && (
-            <p className="mt-4 text-sm text-zinc-600">{statusMessage}</p>
+          {anyUploading && (
+            <p className="mt-4 text-sm text-brand">
+              Still uploading one or more images — please wait a moment
+              before saving or generating the PDF.
+            </p>
+          )}
+
+          {!anyUploading && statusMessage && (
+            <p className="mt-4 text-sm text-foreground/60">{statusMessage}</p>
           )}
         </div>
+
+        <p className="text-center text-xs text-brand-dark/40 mt-12 tracking-wide">
+          Gilly Gift &amp; Craft — handmade to order
+        </p>
       </div>
     </main>
   );
