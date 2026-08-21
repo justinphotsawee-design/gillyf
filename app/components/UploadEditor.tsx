@@ -14,6 +14,7 @@ export default function UploadEditor({
 }) {
   const [src, setSrc] = useState("");
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFileChange(
     e: React.ChangeEvent<HTMLInputElement>
@@ -43,6 +44,8 @@ export default function UploadEditor({
       console.error(`Upload failed for ${slot}:`, error);
     } finally {
       setUploading(false);
+      // Allow re-selecting the same file again later.
+      e.target.value = "";
     }
   }
 
@@ -51,14 +54,22 @@ export default function UploadEditor({
       <h2 className="text-xl font-semibold mb-4">{slot}</h2>
 
       <input
+        ref={fileInputRef}
         type="file"
         accept="image/*"
         onChange={handleFileChange}
         disabled={uploading}
+        className="hidden"
       />
-      {uploading && (
-        <p className="text-sm text-zinc-400 mt-2">Uploading...</p>
-      )}
+
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+        className="inline-flex items-center gap-2 bg-black text-white px-5 py-3 rounded-xl disabled:opacity-50"
+      >
+        {uploading ? "Uploading..." : src ? "Change Image" : "Add Image"}
+      </button>
 
       <div className="mt-6 border inline-block">
         <CanvasEditor src={src} />

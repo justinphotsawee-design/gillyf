@@ -3,7 +3,7 @@ import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
 // 1 cm in PDF points (72 pt / inch, 2.54 cm / inch)
 const CM = 28.3465;
 
-// Each slot's real-world size, taken from the Soul Made NFC CD Keychain
+// Each slot's real-world size, taken from the NFC CD Keychain
 // template (cover 5cm / 4.3cm wide x 3.8cm tall, back outer/inner 4.1cm
 // square, packaging matched to the cover width).
 type SlotId =
@@ -64,7 +64,7 @@ export async function createPDF(
   const pageHeight = 841.89;
   const page = pdf.addPage([pageWidth, pageHeight]);
 
-  page.drawText("Soul Made — NFC CD Keychain Artwork", {
+  page.drawText("NFC CD Keychain Artwork", {
     x: 40,
     y: pageHeight - 50,
     size: 16,
