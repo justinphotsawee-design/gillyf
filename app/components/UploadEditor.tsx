@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Stage, Layer, Image, Transformer } from "react-konva";
 import useImage from "use-image";
 import type Konva from "konva";
@@ -71,7 +71,7 @@ export default function UploadEditor({
         {uploading ? "Uploading..." : src ? "Change Image" : "Add Image"}
       </button>
 
-      <div className="mt-6 border inline-block">
+      <div className="mt-6 border rounded-lg w-full max-w-[500px] overflow-hidden">
         <CanvasEditor src={src} />
       </div>
     </div>
@@ -81,37 +81,66 @@ export default function UploadEditor({
 function CanvasEditor({ src }: { src: string }) {
   const [image] = useImage(src);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(320);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    function updateSize() {
+      if (!el) return;
+      // Square canvas that fills the available width, capped at 500px
+      // so it never overflows a narrow mobile screen.
+      const width = el.offsetWidth;
+      setSize(Math.max(200, Math.min(width, 500)));
+    }
+
+    updateSize();
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const imageRef = useRef<Konva.Image>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
 
-  return (
-    <Stage
-      width={500}
-      height={500}
-      onClick={() => {
-        if (imageRef.current) {
-          transformerRef.current?.nodes([imageRef.current]);
-        }
-      }}
-    >
-      <Layer>
-        {image && (
-          <>
-            {/* eslint-disable-next-line jsx-a11y/alt-text -- this is Konva's canvas Image, not next/image */}
-            <Image
-              ref={imageRef}
-              image={image}
-              draggable
-              width={250}
-              height={250}
-              x={120}
-              y={120}
-            />
+  // Keep the same proportions as the original 500px design
+  // (image at 24% offset, 50% of the stage size).
+  const imgSize = size * 0.5;
+  const imgOffset = size * 0.24;
 
-            <Transformer ref={transformerRef} />
-          </>
-        )}
-      </Layer>
-    </Stage>
+  return (
+    <div ref={containerRef} className="w-full">
+      <Stage
+        width={size}
+        height={size}
+        onClick={() => {
+          if (imageRef.current) {
+            transformerRef.current?.nodes([imageRef.current]);
+          }
+        }}
+      >
+        <Layer>
+          {image && (
+            <>
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- this is Konva's canvas Image, not next/image */}
+              <Image
+                ref={imageRef}
+                image={image}
+                draggable
+                width={imgSize}
+                height={imgSize}
+                x={imgOffset}
+                y={imgOffset}
+              />
+
+              <Transformer ref={transformerRef} />
+            </>
+          )}
+        </Layer>
+      </Stage>
+    </div>
   );
 }
