@@ -1,11 +1,24 @@
-import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFFont,
+  PDFImage,
+  PDFPage,
+  degrees,
+  rgb,
+  StandardFonts,
+  clip,
+  endPath,
+  pushGraphicsState,
+  popGraphicsState,
+  rectangle as rectangleOp,
+} from "pdf-lib";
 
 // 1 cm in PDF points (72 pt / inch, 2.54 cm / inch)
 const CM = 28.3465;
 
-// Each slot's real-world size, taken from the NFC CD Keychain
-// template (cover 5cm / 4.3cm wide x 3.8cm tall, back outer/inner 4.1cm
-// square, packaging matched to the cover width).
+// Mirrors app/components/TemplatePreview.tsx exactly — same rows, same
+// cm dimensions, same "no gap for Back/Packaging" layout — so the PDF a
+// customer downloads matches the live preview on the site.
 type SlotId =
   | "coverFront"
   | "coverBack"
@@ -14,47 +27,67 @@ type SlotId =
   | "packagingLeft"
   | "packagingRight";
 
-interface SlotSpec {
-  label: string;
-  widthCm: number;
+interface RowSpec {
+  title: string;
+  leftId: SlotId;
+  rightId: SlotId;
+  leftLabel: string;
+  rightLabel: string;
+  leftWidthCm: number;
+  rightWidthCm: number;
   heightCm: number;
+  gapCm: number;
+  showGap: boolean;
+  gapImageId?: SlotId;
 }
 
-const SLOTS: Record<SlotId, SlotSpec> = {
-  coverFront: { label: "Front", widthCm: 5, heightCm: 3.8 },
-  coverBack: { label: "Back", widthCm: 4.3, heightCm: 3.8 },
-  backOuter: { label: "Outer", widthCm: 4.1, heightCm: 4.1 },
-  backInner: { label: "Inner", widthCm: 4.1, heightCm: 4.1 },
-  packagingLeft: { label: "Text", widthCm: 5, heightCm: 3.8 },
-  packagingRight: { label: "Image", widthCm: 4.3, heightCm: 3.8 },
-};
-
-// gap between the two boxes in each row
-const GAP_CM: Record<"cover" | "back" | "packaging", number> = {
-  cover: 1.5,
-  back: 1,
-  packaging: 1.5,
-};
-
-const SECTIONS: {
-  title: string;
-  gapKey: "cover" | "back" | "packaging";
-  left: SlotId;
-  right: SlotId;
-}[] = [
-  { title: "COVER", gapKey: "cover", left: "coverFront", right: "coverBack" },
-  { title: "BACK", gapKey: "back", left: "backOuter", right: "backInner" },
+const ROWS: RowSpec[] = [
+  {
+    title: "COVER",
+    leftId: "coverFront",
+    rightId: "coverBack",
+    leftLabel: "Front",
+    rightLabel: "Back",
+    leftWidthCm: 5,
+    rightWidthCm: 4.3,
+    heightCm: 3.8,
+    gapCm: 1.5,
+    showGap: true,
+    // The center strip shows a sliver cropped from the middle of the Back
+    // Inner photo instead of sitting empty.
+    gapImageId: "backInner",
+  },
+  {
+    title: "BACK",
+    leftId: "backOuter",
+    rightId: "backInner",
+    leftLabel: "Outer",
+    rightLabel: "Inner",
+    leftWidthCm: 4.1,
+    rightWidthCm: 4.1,
+    heightCm: 4.1,
+    gapCm: 1,
+    showGap: false,
+  },
   {
     title: "PACKAGING",
-    gapKey: "packaging",
-    left: "packagingLeft",
-    right: "packagingRight",
+    leftId: "packagingLeft",
+    rightId: "packagingRight",
+    leftLabel: "Text",
+    rightLabel: "Image",
+    leftWidthCm: 5,
+    rightWidthCm: 4.3,
+    heightCm: 3.8,
+    gapCm: 1.5,
+    showGap: false,
   },
 ];
 
 // Brand palette, matching the web app's cream + deep-red theme.
 const BRAND = rgb(0.659, 0.125, 0.184); // #a8202f
-const INK = rgb(0.165, 0.102, 0.082); // #2a1a15
+const CREAM = rgb(0.98, 0.953, 0.894); // #faf3e4 — same as --background
+const MUTED = rgb(0.55, 0.47, 0.49); // brand-dark at ~45% opacity look
+const DASH_BORDER = rgb(0.85, 0.45, 0.5);
 const HAIRLINE = rgb(0.82, 0.82, 0.82);
 const PLACEHOLDER_FILL = rgb(0.98, 0.96, 0.94);
 
@@ -84,92 +117,159 @@ export async function createPDF(
 
   const contentX = margin + 24;
 
-  // Brand header
-  page.drawText("GILLY GIFT & CRAFT", {
+  // Header — "Gilly  NFC CD KEYCHAIN", same single line as the on-site
+  // preview (pdf-lib's built-in fonts can't render the script wordmark,
+  // so this uses bold brand-colored text as the closest match).
+  page.drawText("Gilly", {
     x: contentX,
-    y: pageHeight - margin - 30,
-    size: 10,
+    y: pageHeight - margin - 34,
+    size: 20,
     font: boldFont,
     color: BRAND,
   });
-  page.drawText("NFC CD Keychain — Print Artwork", {
-    x: contentX,
-    y: pageHeight - margin - 48,
-    size: 18,
-    font: boldFont,
-    color: INK,
-  });
-  page.drawLine({
-    start: { x: contentX, y: pageHeight - margin - 62 },
-    end: { x: pageWidth - margin - 24, y: pageHeight - margin - 62 },
-    thickness: 1,
-    color: HAIRLINE,
+  const gillyWidth = boldFont.widthOfTextAtSize("Gilly", 20);
+  page.drawText("NFC CD KEYCHAIN", {
+    x: contentX + gillyWidth + 10,
+    y: pageHeight - margin - 30,
+    size: 8,
+    font,
+    color: MUTED,
   });
 
-  let cursorY = pageHeight - margin - 100;
-  const sectionGap = 40;
-  const labelGap = 20;
+  let cursorY = pageHeight - margin - 70;
+  const rowGap = 44;
+  const measureLabelSize = 7;
+  const measureRowHeight = 12;
+  const titleColWidth = 10;
+  const colGap = 8;
 
-  for (const section of SECTIONS) {
-    const leftSpec = SLOTS[section.left];
-    const rightSpec = SLOTS[section.right];
-    const gapPt = GAP_CM[section.gapKey] * CM;
+  for (const row of ROWS) {
+    const leftW = row.leftWidthCm * CM;
+    const rightW = row.rightWidthCm * CM;
+    const gapW = row.showGap ? row.gapCm * CM : 0;
+    const rowHeight = row.heightCm * CM;
+    const boxesWidth = leftW + gapW + rightW;
 
-    const leftW = leftSpec.widthCm * CM;
-    const leftH = leftSpec.heightCm * CM;
-    const rightW = rightSpec.widthCm * CM;
-    const rightH = rightSpec.heightCm * CM;
+    const heightLabelText = `${row.heightCm}cm`;
+    const heightLabelWidth = font.widthOfTextAtSize(
+      heightLabelText,
+      measureLabelSize
+    );
 
-    const rowWidth = leftW + gapPt + rightW;
-    const rowHeight = Math.max(leftH, rightH);
-    const startX = (pageWidth - rowWidth) / 2;
+    const rowContentWidth =
+      titleColWidth + colGap + heightLabelWidth + colGap + boxesWidth;
+    const rowStartX = (pageWidth - rowContentWidth) / 2;
 
-    // Section title, small-caps style with a short brand-colored rule.
-    page.drawText(section.title, {
-      x: startX,
-      y: cursorY,
-      size: 11,
+    const heightLabelX = rowStartX + titleColWidth + colGap;
+    const boxStartX = heightLabelX + heightLabelWidth + colGap;
+
+    const boxTopY = cursorY - measureRowHeight;
+    const boxBottomY = boxTopY - rowHeight;
+
+    // Section title, rotated to run vertically alongside the row.
+    const titleWidth = boldFont.widthOfTextAtSize(row.title, 7);
+    page.drawText(row.title, {
+      x: rowStartX + 6,
+      y: boxBottomY + rowHeight / 2 - titleWidth / 2,
+      size: 7,
       font: boldFont,
-      color: INK,
-    });
-    page.drawLine({
-      start: { x: startX, y: cursorY - 6 },
-      end: { x: startX + 28, y: cursorY - 6 },
-      thickness: 2,
-      color: BRAND,
+      color: MUTED,
+      rotate: degrees(90),
     });
 
-    const boxTopY = cursorY - labelGap;
+    // Height label, horizontal, vertically centered on the row.
+    page.drawText(heightLabelText, {
+      x: heightLabelX,
+      y: boxBottomY + rowHeight / 2 - 3,
+      size: measureLabelSize,
+      font,
+      color: MUTED,
+    });
 
-    const leftX = startX;
-    const rightX = startX + leftW + gapPt;
-    const leftY = boxTopY - leftH;
-    const rightY = boxTopY - rightH;
-
-    await drawSlot(
-      pdf,
+    // Width labels above each box (and the gap, when there is one).
+    drawCenteredLabel(
       page,
       font,
-      images[section.left],
-      leftSpec,
-      leftX,
-      leftY,
+      `${row.leftWidthCm}cm`,
+      boxStartX,
       leftW,
-      leftH
+      boxTopY + 4,
+      measureLabelSize,
+      MUTED
     );
+    if (row.showGap) {
+      drawCenteredLabel(
+        page,
+        font,
+        `${row.gapCm}cm`,
+        boxStartX + leftW,
+        gapW,
+        boxTopY + 4,
+        measureLabelSize,
+        MUTED
+      );
+    }
+    drawCenteredLabel(
+      page,
+      font,
+      `${row.rightWidthCm}cm`,
+      boxStartX + leftW + gapW,
+      rightW,
+      boxTopY + 4,
+      measureLabelSize,
+      MUTED
+    );
+
     await drawSlot(
       pdf,
       page,
       font,
-      images[section.right],
-      rightSpec,
-      rightX,
-      rightY,
-      rightW,
-      rightH
+      images[row.leftId],
+      row.leftLabel,
+      boxStartX,
+      boxBottomY,
+      leftW,
+      rowHeight
     );
 
-    cursorY = boxTopY - rowHeight - sectionGap;
+    if (row.showGap) {
+      const gapImage = row.gapImageId
+        ? await tryEmbedImage(pdf, images[row.gapImageId])
+        : null;
+
+      if (gapImage) {
+        drawImageCover(
+          page,
+          gapImage,
+          boxStartX + leftW,
+          boxBottomY,
+          gapW,
+          rowHeight
+        );
+      } else {
+        page.drawRectangle({
+          x: boxStartX + leftW,
+          y: boxBottomY,
+          width: gapW,
+          height: rowHeight,
+          color: CREAM,
+        });
+      }
+    }
+
+    await drawSlot(
+      pdf,
+      page,
+      font,
+      images[row.rightId],
+      row.rightLabel,
+      boxStartX + leftW + gapW,
+      boxBottomY,
+      rightW,
+      rowHeight
+    );
+
+    cursorY = boxBottomY - rowGap;
   }
 
   page.drawText("Gilly Gift & Craft — handmade to order", {
@@ -183,34 +283,71 @@ export async function createPDF(
   return pdf.save();
 }
 
+function drawCenteredLabel(
+  page: PDFPage,
+  font: PDFFont,
+  text: string,
+  areaX: number,
+  areaWidth: number,
+  y: number,
+  size: number,
+  color: ReturnType<typeof rgb>
+) {
+  const textWidth = font.widthOfTextAtSize(text, size);
+  page.drawText(text, {
+    x: areaX + (areaWidth - textWidth) / 2,
+    y,
+    size,
+    font,
+    color,
+  });
+}
+
 async function drawSlot(
   pdf: PDFDocument,
   page: PDFPage,
   font: PDFFont,
   url: string | undefined,
-  spec: SlotSpec,
+  label: string,
   x: number,
   y: number,
   width: number,
   height: number
 ) {
   const embedded = url ? await tryEmbedImage(pdf, url) : null;
+  const labelText = label.toUpperCase();
+  const labelSize = 7;
 
   if (embedded) {
-    const scale = Math.min(width / embedded.width, height / embedded.height);
-    const drawWidth = embedded.width * scale;
-    const drawHeight = embedded.height * scale;
+    drawImageCover(page, embedded, x, y, width, height);
 
-    // Crisp corner ticks instead of a full box now that there's a photo
-    // filling the frame — keeps the sheet feeling like a cut guide rather
-    // than a form.
-    drawCornerTicks(page, x, y, width, height);
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      borderWidth: 1,
+      borderColor: DASH_BORDER,
+      borderDashArray: [3, 2],
+    });
 
-    page.drawImage(embedded, {
-      x: x + (width - drawWidth) / 2,
-      y: y + (height - drawHeight) / 2,
-      width: drawWidth,
-      height: drawHeight,
+    // Bottom label badge, matching the dark overlay chip in the preview.
+    const badgeHeight = 13;
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height: badgeHeight,
+      color: rgb(0, 0, 0),
+      opacity: 0.35,
+    });
+    const labelWidth = font.widthOfTextAtSize(labelText, labelSize);
+    page.drawText(labelText, {
+      x: x + (width - labelWidth) / 2,
+      y: y + 4,
+      size: labelSize,
+      font,
+      color: rgb(1, 1, 1),
     });
   } else {
     page.drawRectangle({
@@ -220,57 +357,67 @@ async function drawSlot(
       height,
       color: PLACEHOLDER_FILL,
       borderWidth: 1,
-      borderColor: HAIRLINE,
-      borderDashArray: [4, 3],
+      borderColor: DASH_BORDER,
+      borderDashArray: [3, 2],
+    });
+
+    page.drawText("+", {
+      x: x + width / 2 - 4,
+      y: y + height / 2 - 6,
+      size: 16,
+      font,
+      color: DASH_BORDER,
+    });
+
+    const labelWidth = font.widthOfTextAtSize(labelText, labelSize);
+    page.drawText(labelText, {
+      x: x + (width - labelWidth) / 2,
+      y: y + 8,
+      size: labelSize,
+      font,
+      color: MUTED,
     });
   }
-
-  // Slot label, centered under the box
-  const labelSize = 9;
-  const labelWidth = font.widthOfTextAtSize(spec.label, labelSize);
-  page.drawText(spec.label, {
-    x: x + (width - labelWidth) / 2,
-    y: y - 12,
-    size: labelSize,
-    font,
-    color: rgb(0.45, 0.45, 0.45),
-  });
 }
 
-const TICK_LENGTH = 10;
-
-function drawCornerTicks(
+// "Cover" fit (like CSS object-fit: cover) — scale up so the photo fills
+// the whole area with no letterboxing, cropping the overflow via a clip
+// region, same as the object-cover thumbnails in the preview.
+function drawImageCover(
   page: PDFPage,
+  image: PDFImage,
   x: number,
   y: number,
   width: number,
   height: number
 ) {
-  const corners: [number, number, number, number][] = [
-    // each: [cornerX, cornerY, dirX, dirY]
-    [x, y + height, 1, -1], // top-left
-    [x + width, y + height, -1, -1], // top-right
-    [x, y, 1, 1], // bottom-left
-    [x + width, y, -1, 1], // bottom-right
-  ];
+  const scale = Math.max(width / image.width, height / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
 
-  for (const [cx, cy, dx, dy] of corners) {
-    page.drawLine({
-      start: { x: cx, y: cy },
-      end: { x: cx + dx * TICK_LENGTH, y: cy },
-      thickness: 1,
-      color: HAIRLINE,
-    });
-    page.drawLine({
-      start: { x: cx, y: cy },
-      end: { x: cx, y: cy + dy * TICK_LENGTH },
-      thickness: 1,
-      color: HAIRLINE,
-    });
-  }
+  page.pushOperators(
+    pushGraphicsState(),
+    rectangleOp(x, y, width, height),
+    clip(),
+    endPath()
+  );
+  page.drawImage(image, {
+    x: drawX,
+    y: drawY,
+    width: drawWidth,
+    height: drawHeight,
+  });
+  page.pushOperators(popGraphicsState());
 }
 
-async function tryEmbedImage(pdf: PDFDocument, url: string) {
+async function tryEmbedImage(
+  pdf: PDFDocument,
+  url: string | undefined
+): Promise<PDFImage | null> {
+  if (!url) return null;
+
   let bytes: Uint8Array;
   try {
     const response = await fetch(url);

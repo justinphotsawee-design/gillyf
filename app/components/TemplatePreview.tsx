@@ -13,6 +13,7 @@ const ROWS: {
   heightCm: number;
   gapCm: number;
   showGap: boolean;
+  gapImageKey?: string;
 }[] = [
   {
     title: "Cover",
@@ -25,6 +26,9 @@ const ROWS: {
     heightCm: 3.8,
     gapCm: 1.5,
     showGap: true,
+    // The center strip shows a sliver cropped from the middle of the Back
+    // Inner photo instead of sitting empty.
+    gapImageKey: "backInner",
   },
   {
     title: "Back",
@@ -77,10 +81,12 @@ function Row({
   row,
   leftUrl,
   rightUrl,
+  gapUrl,
 }: {
   row: (typeof ROWS)[number];
   leftUrl?: string;
   rightUrl?: string;
+  gapUrl?: string;
 }) {
   // When the pair isn't meant to show a physical seam (Back, Packaging),
   // the two photos sit flush against each other — the gap only exists
@@ -126,7 +132,19 @@ function Row({
           >
             <Slot url={leftUrl} label={row.leftLabel} widthPercent={leftPct} />
             {row.showGap && (
-              <div style={{ width: `${gapPct}%` }} className="bg-background" />
+              <div
+                className="relative overflow-hidden bg-background"
+                style={{ width: `${gapPct}%` }}
+              >
+                {gapUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={gapUrl}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                )}
+              </div>
             )}
             <Slot
               url={rightUrl}
@@ -163,6 +181,7 @@ export default function TemplatePreview({
             row={row}
             leftUrl={uploadedUrls[row.leftKey]}
             rightUrl={uploadedUrls[row.rightKey]}
+            gapUrl={row.gapImageKey ? uploadedUrls[row.gapImageKey] : undefined}
           />
         ))}
       </div>
