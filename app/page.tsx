@@ -54,18 +54,38 @@ export default function Home() {
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images: labelledImages() }),
+        body: JSON.stringify({ images: uploadedUrls }),
       });
 
       if (!res.ok) throw new Error("PDF generation failed");
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "keychain-order.pdf";
-      link.click();
-      URL.revokeObjectURL(url);
+      const pdfBlob =
+        blob.type === "application/pdf"
+          ? blob
+          : new Blob([blob], { type: "application/pdf" });
+      const url = URL.createObjectURL(pdfBlob);
+
+      const isMobile =
+        typeof navigator !== "undefined" &&
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        // iOS/Android don't reliably honor the `download` attribute on
+        // blob links. Opening the PDF in a new tab lets the phone's
+        // built-in PDF viewer show its own Save/Share button instead.
+        window.open(url, "_blank");
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "keychain-order.pdf";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      // Give the browser time to open/download before revoking the URL.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {
       console.error(error);
       setStatusMessage("Could not generate the PDF. Please try again.");
