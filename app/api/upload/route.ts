@@ -26,7 +26,10 @@ export async function POST(request: Request) {
     const result = await new Promise<{ secure_url: string }>(
       (resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
-          { resource_type: "image" },
+          // Force every upload to JPEG. Phone photos can arrive as HEIC,
+          // WEBP, etc., and pdf-lib (used later in generate-pdf) can only
+          // embed PNG or JPEG — anything else silently fails to embed.
+          { resource_type: "image", format: "jpg" },
           (error, uploadResult) => {
             if (error || !uploadResult) {
               reject(error ?? new Error("Upload returned no result"));

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import UploadEditor from "./components/UploadEditor";
+import TemplatePreview from "./components/TemplatePreview";
 
 const slots = [
   { id: "coverFront", label: "Cover Front" },
@@ -166,6 +167,8 @@ export default function Home() {
             style={{ width: `${(completedCount / slots.length) * 100}%` }}
           />
         </div>
+
+        <TemplatePreview uploadedUrls={uploadedUrls} />
 
         <div className="grid lg:grid-cols-2 gap-6 mb-10">
           {slots.map((slot) => {

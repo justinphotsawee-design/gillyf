@@ -52,6 +52,12 @@ const SECTIONS: {
   },
 ];
 
+// Brand palette, matching the web app's cream + deep-red theme.
+const BRAND = rgb(0.659, 0.125, 0.184); // #a8202f
+const INK = rgb(0.165, 0.102, 0.082); // #2a1a15
+const HAIRLINE = rgb(0.82, 0.82, 0.82);
+const PLACEHOLDER_FILL = rgb(0.98, 0.96, 0.94);
+
 export async function createPDF(
   images: Partial<Record<SlotId, string>>
 ): Promise<Uint8Array> {
@@ -64,16 +70,45 @@ export async function createPDF(
   const pageHeight = 841.89;
   const page = pdf.addPage([pageWidth, pageHeight]);
 
-  page.drawText("NFC CD Keychain Artwork", {
-    x: 40,
-    y: pageHeight - 50,
-    size: 16,
-    font: boldFont,
+  const margin = 32;
+
+  // Outer frame — gives the sheet a printed, cut-to-size feel.
+  page.drawRectangle({
+    x: margin,
+    y: margin,
+    width: pageWidth - margin * 2,
+    height: pageHeight - margin * 2,
+    borderWidth: 1,
+    borderColor: HAIRLINE,
   });
 
-  let cursorY = pageHeight - 100;
-  const sectionGap = 34;
-  const labelGap = 18;
+  const contentX = margin + 24;
+
+  // Brand header
+  page.drawText("GILLY GIFT & CRAFT", {
+    x: contentX,
+    y: pageHeight - margin - 30,
+    size: 10,
+    font: boldFont,
+    color: BRAND,
+  });
+  page.drawText("NFC CD Keychain — Print Artwork", {
+    x: contentX,
+    y: pageHeight - margin - 48,
+    size: 18,
+    font: boldFont,
+    color: INK,
+  });
+  page.drawLine({
+    start: { x: contentX, y: pageHeight - margin - 62 },
+    end: { x: pageWidth - margin - 24, y: pageHeight - margin - 62 },
+    thickness: 1,
+    color: HAIRLINE,
+  });
+
+  let cursorY = pageHeight - margin - 100;
+  const sectionGap = 40;
+  const labelGap = 20;
 
   for (const section of SECTIONS) {
     const leftSpec = SLOTS[section.left];
@@ -89,13 +124,19 @@ export async function createPDF(
     const rowHeight = Math.max(leftH, rightH);
     const startX = (pageWidth - rowWidth) / 2;
 
-    // Section title
+    // Section title, small-caps style with a short brand-colored rule.
     page.drawText(section.title, {
       x: startX,
       y: cursorY,
-      size: 12,
+      size: 11,
       font: boldFont,
-      color: rgb(0.1, 0.1, 0.1),
+      color: INK,
+    });
+    page.drawLine({
+      start: { x: startX, y: cursorY - 6 },
+      end: { x: startX + 28, y: cursorY - 6 },
+      thickness: 2,
+      color: BRAND,
     });
 
     const boxTopY = cursorY - labelGap;
@@ -131,6 +172,14 @@ export async function createPDF(
     cursorY = boxTopY - rowHeight - sectionGap;
   }
 
+  page.drawText("Gilly Gift & Craft — handmade to order", {
+    x: contentX,
+    y: margin + 14,
+    size: 8,
+    font,
+    color: rgb(0.55, 0.55, 0.55),
+  });
+
   return pdf.save();
 }
 
@@ -145,15 +194,36 @@ async function drawSlot(
   width: number,
   height: number
 ) {
-  // Frame
-  page.drawRectangle({
-    x,
-    y,
-    width,
-    height,
-    borderWidth: 1,
-    borderColor: rgb(0.6, 0.6, 0.6),
-  });
+  const embedded = url ? await tryEmbedImage(pdf, url) : null;
+
+  if (embedded) {
+    const scale = Math.min(width / embedded.width, height / embedded.height);
+    const drawWidth = embedded.width * scale;
+    const drawHeight = embedded.height * scale;
+
+    // Crisp corner ticks instead of a full box now that there's a photo
+    // filling the frame — keeps the sheet feeling like a cut guide rather
+    // than a form.
+    drawCornerTicks(page, x, y, width, height);
+
+    page.drawImage(embedded, {
+      x: x + (width - drawWidth) / 2,
+      y: y + (height - drawHeight) / 2,
+      width: drawWidth,
+      height: drawHeight,
+    });
+  } else {
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      color: PLACEHOLDER_FILL,
+      borderWidth: 1,
+      borderColor: HAIRLINE,
+      borderDashArray: [4, 3],
+    });
+  }
 
   // Slot label, centered under the box
   const labelSize = 9;
@@ -163,29 +233,73 @@ async function drawSlot(
     y: y - 12,
     size: labelSize,
     font,
-    color: rgb(0.4, 0.4, 0.4),
+    color: rgb(0.45, 0.45, 0.45),
   });
+}
 
-  if (!url) return;
+const TICK_LENGTH = 10;
 
+function drawCornerTicks(
+  page: PDFPage,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const corners: [number, number, number, number][] = [
+    // each: [cornerX, cornerY, dirX, dirY]
+    [x, y + height, 1, -1], // top-left
+    [x + width, y + height, -1, -1], // top-right
+    [x, y, 1, 1], // bottom-left
+    [x + width, y, -1, 1], // bottom-right
+  ];
+
+  for (const [cx, cy, dx, dy] of corners) {
+    page.drawLine({
+      start: { x: cx, y: cy },
+      end: { x: cx + dx * TICK_LENGTH, y: cy },
+      thickness: 1,
+      color: HAIRLINE,
+    });
+    page.drawLine({
+      start: { x: cx, y: cy },
+      end: { x: cx, y: cy + dy * TICK_LENGTH },
+      thickness: 1,
+      color: HAIRLINE,
+    });
+  }
+}
+
+async function tryEmbedImage(pdf: PDFDocument, url: string) {
+  let bytes: Uint8Array;
   try {
     const response = await fetch(url);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-
-    const isPng = url.toLowerCase().includes(".png") || bytes[0] === 137;
-    const image = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-
-    const scale = Math.min(width / image.width, height / image.height);
-    const drawWidth = image.width * scale;
-    const drawHeight = image.height * scale;
-
-    page.drawImage(image, {
-      x: x + (width - drawWidth) / 2,
-      y: y + (height - drawHeight) / 2,
-      width: drawWidth,
-      height: drawHeight,
-    });
+    bytes = new Uint8Array(await response.arrayBuffer());
   } catch (error) {
-    console.error(`Failed to embed image for ${spec.label}`, error);
+    console.error(`Failed to fetch image from ${url}`, error);
+    return null;
+  }
+
+  // Detect the real format from the file's magic bytes rather than the
+  // URL — trustworthy even if a URL has no/misleading extension.
+  const isPng =
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47;
+  const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+
+  // Uploads are forced to JPEG server-side (see api/upload/route.ts), so
+  // this is mainly a safety net for older uploads. pdf-lib only supports
+  // PNG/JPEG, so anything else (HEIC, WEBP, ...) can't be embedded — the
+  // slot just falls back to the empty placeholder.
+  try {
+    if (isPng) return await pdf.embedPng(bytes);
+    if (isJpg) return await pdf.embedJpg(bytes);
+    console.error(`Unsupported image format for ${url} (not PNG or JPEG)`);
+    return null;
+  } catch (error) {
+    console.error(`Failed to embed image from ${url}`, error);
+    return null;
   }
 }
