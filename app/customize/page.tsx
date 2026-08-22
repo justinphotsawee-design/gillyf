@@ -71,6 +71,19 @@ export default function Customize() {
     setAdjustments((prev) => ({ ...prev, [slotId]: next }));
   }
 
+  function handleRemoveSlot(slotId: string) {
+    setUploadedUrls((prev) => {
+      const next = { ...prev };
+      delete next[slotId];
+      return next;
+    });
+    setAdjustments((prev) => {
+      const next = { ...prev };
+      delete next[slotId];
+      return next;
+    });
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     const slotId = pendingSlotRef.current;
@@ -316,6 +329,7 @@ export default function Customize() {
           adjustments={adjustments}
           onAdjustChange={handleAdjustChange}
           onSlotClick={handleSlotClick}
+          onRemove={handleRemoveSlot}
         />
 
         <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-8 border border-brand/10">

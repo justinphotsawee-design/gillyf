@@ -104,6 +104,48 @@ function ReplaceButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+function DeleteOverlay({
+  visible,
+  onDelete,
+}: {
+  visible: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={`absolute inset-0 z-10 flex items-center justify-center bg-black/40 transition-opacity ${
+        visible ? "opacity-100" : "opacity-0 pointer-events-none"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onDelete}
+        // Same reasoning as ReplaceButton — don't let this bubble up to
+        // the draggable parent's pointer handlers.
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label="Remove photo"
+        className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-foreground shadow-lg transition-transform hover:scale-105"
+      >
+        <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+          <path
+            d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6m-6.5 0 .6 9.4A1.5 1.5 0 0 0 7.6 17h4.8a1.5 1.5 0 0 0 1.5-1.6L14.5 6"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M8.5 9v5M11.5 9v5"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 function Slot({
   url,
   label,
@@ -112,6 +154,7 @@ function Slot({
   adjustment,
   onAdjustChange,
   onAddClick,
+  onRemove,
 }: {
   url?: string;
   label: string;
@@ -120,6 +163,7 @@ function Slot({
   adjustment?: Adjustment;
   onAdjustChange: (next: Adjustment) => void;
   onAddClick: () => void;
+  onRemove: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -157,9 +201,11 @@ function Slot({
   // "adjust state when a prop changes"), not in an effect, so there's no
   // extra render still showing the old image's now-wrong dimensions.
   const [lastUrl, setLastUrl] = useState(url);
+  const [showDelete, setShowDelete] = useState(false);
   if (url !== lastUrl) {
     setLastUrl(url);
     setNaturalSize(null);
+    setShowDelete(false);
   }
 
   useEffect(() => {
@@ -275,7 +321,18 @@ function Slot({
       if (pinchRef.current.pointers.size < 2) pinchRef.current = null;
       return;
     }
-    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
+    if (dragRef.current?.pointerId === e.pointerId) {
+      // A pointer down/up with (almost) no movement in between is a tap
+      // rather than a drag — toggle the delete button instead of treating
+      // it as a pan gesture. Also fires for a tap on the dark backdrop
+      // itself, which is how the overlay dismisses without deleting.
+      const moved = Math.hypot(
+        e.clientX - dragRef.current.startClientX,
+        e.clientY - dragRef.current.startClientY
+      );
+      dragRef.current = null;
+      if (moved < 6) setShowDelete((prev) => !prev);
+    }
   }
 
   // React's onWheel is passive by default, so e.preventDefault() inside
@@ -380,11 +437,23 @@ function Slot({
         </span>
       )}
 
-      {!uploading && <ReplaceButton onClick={onAddClick} />}
+      {!uploading && (
+        <DeleteOverlay
+          visible={showDelete}
+          onDelete={() => {
+            setShowDelete(false);
+            onRemove();
+          }}
+        />
+      )}
 
-      <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-white/90 drop-shadow-sm pointer-events-none">
-        <span className="bg-black/35 rounded px-1.5 py-0.5">{label}</span>
-      </span>
+      {!uploading && !showDelete && <ReplaceButton onClick={onAddClick} />}
+
+      {!showDelete && (
+        <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-white/90 drop-shadow-sm pointer-events-none">
+          <span className="bg-black/35 rounded px-1.5 py-0.5">{label}</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -402,6 +471,7 @@ function Row({
   gapAdjustment,
   onAdjustChange,
   onSlotClick,
+  onRemove,
 }: {
   row: (typeof ROWS)[number];
   leftUrl?: string;
@@ -415,6 +485,7 @@ function Row({
   gapAdjustment?: Adjustment;
   onAdjustChange: (slotKey: string, next: Adjustment) => void;
   onSlotClick: (slotKey: string) => void;
+  onRemove: (slotKey: string) => void;
 }) {
   // When the pair isn't meant to show a physical seam (Back, Packaging),
   // the two photos sit flush against each other — the gap only exists
@@ -449,6 +520,7 @@ function Row({
               adjustment={leftAdjustment}
               onAdjustChange={(next) => onAdjustChange(row.leftKey, next)}
               onAddClick={() => onSlotClick(row.leftKey)}
+              onRemove={() => onRemove(row.leftKey)}
             />
             {row.showGap && row.gapKey && (
               <Slot
@@ -459,6 +531,7 @@ function Row({
                 adjustment={gapAdjustment}
                 onAdjustChange={(next) => onAdjustChange(row.gapKey!, next)}
                 onAddClick={() => onSlotClick(row.gapKey!)}
+                onRemove={() => onRemove(row.gapKey!)}
               />
             )}
             <Slot
@@ -469,6 +542,7 @@ function Row({
               adjustment={rightAdjustment}
               onAdjustChange={(next) => onAdjustChange(row.rightKey, next)}
               onAddClick={() => onSlotClick(row.rightKey)}
+              onRemove={() => onRemove(row.rightKey)}
             />
           </div>
         </div>
@@ -483,12 +557,14 @@ export default function TemplatePreview({
   adjustments,
   onAdjustChange,
   onSlotClick,
+  onRemove,
 }: {
   uploadedUrls: Record<string, string>;
   uploadingSlots: Record<string, boolean>;
   adjustments: Record<string, Adjustment>;
   onAdjustChange: (slotKey: string, next: Adjustment) => void;
   onSlotClick: (slotKey: string) => void;
+  onRemove: (slotKey: string) => void;
 }) {
   return (
     <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-10 max-w-2xl mx-auto">
@@ -522,6 +598,7 @@ export default function TemplatePreview({
             gapAdjustment={row.gapKey ? adjustments[row.gapKey] : undefined}
             onAdjustChange={onAdjustChange}
             onSlotClick={onSlotClick}
+            onRemove={onRemove}
           />
         ))}
       </div>
