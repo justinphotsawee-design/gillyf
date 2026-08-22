@@ -2,30 +2,24 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isValidEmail, saveCustomerInfo } from "./lib/customer";
+import { saveCustomerInfo } from "./lib/customer";
 
 export default function Welcome() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [error, setError] = useState("");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     const trimmedName = name.trim();
-    const trimmedEmail = email.trim();
 
     if (!trimmedName) {
       setError("Please enter your name.");
       return;
     }
-    if (!isValidEmail(trimmedEmail)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
 
-    saveCustomerInfo({ name: trimmedName, email: trimmedEmail });
+    saveCustomerInfo({ name: trimmedName });
     router.push("/customize");
   }
 
@@ -52,10 +46,10 @@ export default function Welcome() {
             Gift &amp; Craft
           </p>
           <h1 className="font-display text-2xl font-bold text-foreground">
-            Let&apos;s get your details
+            What&apos;s your name?
           </h1>
           <p className="text-foreground/60 text-sm mt-2">
-            We&apos;ll email your finished design here once it&apos;s ready.
+            We&apos;ll put it on your finished design.
           </p>
         </div>
 
@@ -73,23 +67,6 @@ export default function Welcome() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name"
-              className="w-full rounded-xl border border-brand/20 px-4 py-3 text-foreground placeholder:text-foreground/30 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/40 transition"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-foreground/70 mb-1.5"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
               className="w-full rounded-xl border border-brand/20 px-4 py-3 text-foreground placeholder:text-foreground/30 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/40 transition"
             />
           </div>

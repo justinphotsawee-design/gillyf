@@ -3,12 +3,13 @@ import { createPDF, SLOT_IDS, type Adjustment, type SlotId } from "@/app/lib/pdf
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { images, adjustments } = body as {
+    const { images, adjustments, customerName } = body as {
       images?: Record<string, string>;
       adjustments?: Partial<Record<SlotId, Adjustment>>;
+      customerName?: string;
     };
 
-    const pdfBytes = await createPDF(images ?? {}, adjustments ?? {});
+    const pdfBytes = await createPDF(images ?? {}, adjustments ?? {}, customerName);
 
     return new Response(pdfBytes as BodyInit, {
       headers: {
@@ -53,7 +54,8 @@ export async function GET(request: Request) {
       }
     }
 
-    const pdfBytes = await createPDF(images, adjustments);
+    const customerName = searchParams.get("customerName") ?? undefined;
+    const pdfBytes = await createPDF(images, adjustments, customerName);
 
     return new Response(pdfBytes as BodyInit, {
       headers: {

@@ -39,7 +39,6 @@ export default function Customize() {
   const [adjustments, setAdjustments] = useState<Record<string, Adjustment>>(
     {}
   );
-  const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -107,10 +106,10 @@ export default function Customize() {
     }
   }
 
-  async function handleSaveDesign() {
-    if (!customer) return;
-    setSaving(true);
-    setStatusMessage("");
+  // Fire the shop-notification email (previously the separate "Save
+  // Design" button) — now bundled into the single Generate PDF action
+  // instead of requiring a second click.
+  async function notifyShop(): Promise<boolean> {
     try {
       const res = await fetch("/api/send", {
         method: "POST",
@@ -118,24 +117,13 @@ export default function Customize() {
         body: JSON.stringify({
           images: uploadedUrls,
           adjustments,
-          customerName: customer.name,
-          customerEmail: customer.email,
+          customerName: customer?.name,
         }),
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Save failed");
-
-      setStatusMessage(
-        data.customerEmailSent
-          ? `Design saved — a copy of the PDF was emailed to ${customer.email}.`
-          : "Design saved and order sent! We couldn't email you a copy automatically, but we've got your order."
-      );
+      return res.ok;
     } catch (error) {
-      console.error(error);
-      setStatusMessage("Something went wrong while saving. Please try again.");
-    } finally {
-      setSaving(false);
+      console.error("Failed to notify shop:", error);
+      return false;
     }
   }
 
@@ -148,8 +136,17 @@ export default function Customize() {
       // nowhere (same-tab navigation to blob:). A plain GET URL sidesteps
       // both: it's a normal https:// resource, no blob involved. Some
       // in-app browsers still can't render a PDF response at all though
-      // (see the notice next to the button) — Save Design (which emails
-      // the PDF instead) always works regardless.
+      // (see the notice next to the button).
+      setGenerating(true);
+      setStatusMessage("");
+      const sent = await notifyShop();
+      setGenerating(false);
+      if (!sent) {
+        setStatusMessage(
+          "We couldn't send your order automatically — please contact us to confirm it went through."
+        );
+      }
+
       const params = new URLSearchParams();
       for (const [slotId, url] of Object.entries(uploadedUrls)) {
         if (!url) continue;
@@ -159,6 +156,7 @@ export default function Customize() {
         params.set(`${slotId}_x`, String(adj.x));
         params.set(`${slotId}_y`, String(adj.y));
       }
+      if (customer?.name) params.set("customerName", customer.name);
       window.location.href = `/api/generate-pdf?${params.toString()}`;
       return;
     }
@@ -167,20 +165,27 @@ export default function Customize() {
 
     // Mobile browsers only allow window.open() when it's called
     // synchronously inside the click handler — any await before it (the
-    // fetch below can take a few seconds once deployed) makes them treat
-    // it as an untrusted popup and silently block it. Opening a blank tab
-    // right now, then pointing it at the PDF once it's ready, keeps the
-    // open() call inside the trusted gesture window.
+    // fetches below can take a few seconds once deployed) makes them
+    // treat it as an untrusted popup and silently block it. Opening a
+    // blank tab right now, then pointing it at the PDF once it's ready,
+    // keeps the open() call inside the trusted gesture window.
     const pendingTab = isMobile ? window.open("", "_blank") : null;
 
     setGenerating(true);
     setStatusMessage("");
     try {
-      const res = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images: uploadedUrls, adjustments }),
-      });
+      const [shopSent, res] = await Promise.all([
+        notifyShop(),
+        fetch("/api/generate-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            images: uploadedUrls,
+            adjustments,
+            customerName: customer?.name,
+          }),
+        }),
+      ]);
 
       if (!res.ok) throw new Error("PDF generation failed");
 
@@ -213,6 +218,12 @@ export default function Customize() {
 
       // Give the browser time to open/download before revoking the URL.
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      setStatusMessage(
+        shopSent
+          ? "Your PDF is ready and your order has been sent!"
+          : "Your PDF is ready, but we couldn't send your order automatically — please contact us to confirm it went through."
+      );
     } catch (error) {
       console.error(error);
       pendingTab?.close();
@@ -310,17 +321,9 @@ export default function Customize() {
         <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-8 border border-brand/10">
           <div className="flex flex-wrap gap-4">
             <button
-              onClick={handleSaveDesign}
-              disabled={saving || anyUploading}
-              className="bg-brand hover:bg-brand-dark text-white px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition shadow-lg shadow-brand/20 hover:shadow-brand/30"
-            >
-              {saving ? "Saving..." : "Save Design"}
-            </button>
-
-            <button
               onClick={handleGeneratePDF}
               disabled={generating || anyUploading}
-              className="border border-brand text-brand hover:bg-brand/5 px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition"
+              className="bg-brand hover:bg-brand-dark text-white px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition shadow-lg shadow-brand/20 hover:shadow-brand/30"
             >
               {generating ? "Generating..." : "Generate PDF"}
             </button>
@@ -329,17 +332,17 @@ export default function Customize() {
           {anyUploading && (
             <p className="mt-4 text-sm text-brand">
               Still uploading one or more images — please wait a moment
-              before saving or generating the PDF.
+              before generating the PDF.
             </p>
           )}
 
           {!anyUploading && inAppBrowser && (
             <p className="mt-4 text-sm text-foreground/60">
               You&apos;re viewing this inside an app (e.g. LINE), which
-              sometimes can&apos;t display a PDF directly — if &ldquo;Generate
-              PDF&rdquo; doesn&apos;t seem to do anything, use &ldquo;Save
-              Design&rdquo; instead and we&apos;ll email you the PDF, or open
-              this page in Safari/Chrome (⋯ menu → Open in Browser).
+              sometimes can&apos;t display a PDF directly — if it
+              doesn&apos;t seem to do anything, open this page in
+              Safari/Chrome instead (⋯ menu → Open in Browser). Your order
+              is still sent to us either way.
             </p>
           )}
 

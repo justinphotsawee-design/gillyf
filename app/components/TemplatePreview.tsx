@@ -39,7 +39,7 @@ const ROWS: {
   gapKey?: string;
 }[] = [
   {
-    title: "Cover",
+    title: "Back",
     leftLabel: "Front",
     rightLabel: "Back",
     leftKey: "coverFront",
@@ -54,7 +54,7 @@ const ROWS: {
     gapKey: "coverGap",
   },
   {
-    title: "Back",
+    title: "Cover",
     leftLabel: "Outer",
     rightLabel: "Inner",
     leftKey: "backOuter",

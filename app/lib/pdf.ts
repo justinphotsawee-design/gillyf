@@ -12,9 +12,27 @@ import {
   popGraphicsState,
   rectangle as rectangleOp,
 } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import fs from "fs";
+import path from "path";
 
 // 1 cm in PDF points (72 pt / inch, 2.54 cm / inch)
 const CM = 28.3465;
+
+// pdf-lib's built-in fonts (Helvetica etc.) only cover WinAnsi/Latin —
+// they throw on Thai characters, which the customer's name is likely to
+// contain. This is a merged subset (Thai + Latin + digits, built from
+// @fontsource/noto-sans-thai's split subsets via fonttools) so names in
+// either script — or mixed — render instead of erroring out.
+let thaiFontBytesCache: Uint8Array | null = null;
+function loadThaiFontBytes(): Uint8Array {
+  if (!thaiFontBytesCache) {
+    thaiFontBytesCache = fs.readFileSync(
+      path.join(process.cwd(), "app/lib/fonts/NotoSansThai-Regular.ttf")
+    );
+  }
+  return thaiFontBytesCache;
+}
 
 // Mirrors app/components/TemplatePreview.tsx exactly — same rows, same
 // cm dimensions, same "no gap for Back/Packaging" layout — so the PDF a
@@ -73,7 +91,7 @@ interface RowSpec {
 
 const ROWS: RowSpec[] = [
   {
-    title: "COVER",
+    title: "BACK",
     leftId: "coverFront",
     rightId: "coverBack",
     leftWidthCm: 5,
@@ -86,7 +104,7 @@ const ROWS: RowSpec[] = [
     gapImageId: "coverGap",
   },
   {
-    title: "BACK",
+    title: "COVER",
     leftId: "backOuter",
     rightId: "backInner",
     leftWidthCm: 4.1,
@@ -114,13 +132,24 @@ const DASH_BORDER = rgb(0.8, 0.8, 0.8); // light gray, not brand pink
 const HAIRLINE = rgb(0.82, 0.82, 0.82);
 const PLACEHOLDER_FILL = rgb(0.98, 0.96, 0.94);
 
+// A little heart next to the customer's name — 24x24 viewBox, SVG
+// convention (y grows downward from the drawSvgPath anchor).
+const HEART_PATH =
+  "M12 21s-6.7-4.35-9.5-8.5C.5 9.5 2 6 5.5 6c2 0 3.5 1.2 4.5 2.8C11 7.2 12.5 6 14.5 6 18 6 19.5 9.5 17.5 12.5 14.7 16.65 12 21 12 21z";
+
 export async function createPDF(
   images: Partial<Record<SlotId, string>>,
-  adjustments: Partial<Record<SlotId, Adjustment>> = {}
+  adjustments: Partial<Record<SlotId, Adjustment>> = {},
+  customerName?: string
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  // Only Thai names need this (Helvetica can't encode them at all), but
+  // it renders Latin fine too, so it's simplest to use it for the name
+  // line unconditionally rather than picking a font per-name.
+  const nameFont = await pdf.embedFont(loadThaiFontBytes());
 
   // Fetch every distinct image once, in parallel, up front — drawing the
   // rows below is otherwise a chain of sequential awaits (one Cloudinary
@@ -171,6 +200,45 @@ export async function createPDF(
     font,
     color: MUTED,
   });
+
+  // Top-right corner, right-aligned under a little heart — kept off to
+  // the side (rather than stacked under the header) so it doesn't push
+  // the row layout below down, and reads like a small personalized tag.
+  if (customerName?.trim()) {
+    const name = customerName.trim();
+    const rightEdge = pageWidth - contentX;
+    const labelText = "MADE ESPECIALLY FOR";
+    const labelSize = 7;
+    const nameSize = 16;
+    const labelY = pageHeight - margin - 22;
+    const nameY = pageHeight - margin - 40;
+
+    const labelWidth = nameFont.widthOfTextAtSize(labelText, labelSize);
+    const heartSize = 7;
+    const heartGap = 4;
+    page.drawSvgPath(HEART_PATH, {
+      x: rightEdge - labelWidth - heartGap - heartSize,
+      y: labelY + heartSize - 1,
+      scale: heartSize / 24,
+      color: BRAND,
+    });
+    page.drawText(labelText, {
+      x: rightEdge - labelWidth,
+      y: labelY,
+      size: labelSize,
+      font: nameFont,
+      color: MUTED,
+    });
+
+    const nameWidth = nameFont.widthOfTextAtSize(name, nameSize);
+    page.drawText(name, {
+      x: rightEdge - nameWidth,
+      y: nameY,
+      size: nameSize,
+      font: nameFont,
+      color: BRAND,
+    });
+  }
 
   let cursorY = pageHeight - margin - 70;
   const rowGap = 44;
