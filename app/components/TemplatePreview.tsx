@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Mirrors app/lib/pdf.ts's Adjustment — duplicated instead of imported so
 // this client component doesn't pull pdf-lib (server-only) into the
@@ -127,6 +127,11 @@ function Slot({
     startClientX: number;
     startClientY: number;
     startAdjustment: Adjustment;
+    // Pan range in each axis at drag-start (container size minus the
+    // drawn image size at that zoom level) — captured once so a fast
+    // drag stays consistent even as onAdjustChange re-renders mid-drag.
+    panRangeX: number;
+    panRangeY: number;
   } | null>(null);
   const pinchRef = useRef<{
     pointers: Map<number, { x: number; y: number }>;
@@ -135,6 +140,48 @@ function Slot({
   } | null>(null);
 
   const adj = adjustment ?? DEFAULT_ADJUSTMENT;
+
+  // object-position + transform:scale (the first version of this) turned
+  // out not to work: object-position's pannable range is fixed by the
+  // image/container aspect-ratio mismatch alone, computed *before* the
+  // transform — zooming in doesn't add any range in whichever axis
+  // already matched the container exactly at scale 1, so that axis
+  // stayed stuck no matter how far in you zoomed. Sizing/positioning the
+  // <img> directly in pixels (same formula as drawImageCover in
+  // app/lib/pdf.ts) makes zoom actually expand both axes' pan range.
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+
+  // Reset the cached natural size when a new photo replaces this slot's
+  // old one — done during render (React's documented pattern for
+  // "adjust state when a prop changes"), not in an effect, so there's no
+  // extra render still showing the old image's now-wrong dimensions.
+  const [lastUrl, setLastUrl] = useState(url);
+  if (url !== lastUrl) {
+    setLastUrl(url);
+    setNaturalSize(null);
+  }
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setContainerSize({ w: width, h: height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [url]);
+
+  function drawSize(userScale: number) {
+    if (!naturalSize || !containerSize.w || !containerSize.h) return null;
+    const coverScale = Math.max(
+      containerSize.w / naturalSize.w,
+      containerSize.h / naturalSize.h
+    );
+    const scale = coverScale * userScale;
+    return { width: naturalSize.w * scale, height: naturalSize.h * scale };
+  }
 
   function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
     return Math.hypot(a.x - b.x, a.y - b.y);
@@ -180,19 +227,18 @@ function Slot({
       return;
     }
 
+    const size = drawSize(adj.scale);
     dragRef.current = {
       pointerId: e.pointerId,
       startClientX: e.clientX,
       startClientY: e.clientY,
       startAdjustment: adj,
+      panRangeX: size ? containerSize.w - size.width : 0,
+      panRangeY: size ? containerSize.h - size.height : 0,
     };
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-
     if (pinchRef.current?.pointers.has(e.pointerId)) {
       pinchRef.current.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const pts = Array.from(pinchRef.current.pointers.values());
@@ -207,16 +253,19 @@ function Slot({
     }
 
     if (!dragRef.current || dragRef.current.pointerId !== e.pointerId) return;
-    const dxPct = (e.clientX - dragRef.current.startClientX) / rect.width;
-    const dyPct = (e.clientY - dragRef.current.startClientY) / rect.height;
-    const { startAdjustment } = dragRef.current;
-    // Dragging right/down should reveal more of the image's opposite
-    // edge, so the focal point moves the other way — and faster zoom
-    // means a given drag covers less of the (now larger) image.
+    const deltaX = e.clientX - dragRef.current.startClientX;
+    const deltaY = e.clientY - dragRef.current.startClientY;
+    const { startAdjustment, panRangeX, panRangeY } = dragRef.current;
+    // panRangeX/Y (container size minus the drawn image size, at the
+    // zoom level when the drag started) is negative once the image
+    // overflows the box — dividing by it is what flips "drag right" into
+    // "focal point moves left", i.e. the image visually follows the
+    // finger/cursor. It's 0 only if the image exactly fits (no zoom, no
+    // slack), in which case there's nothing to pan in that axis anyway.
     onAdjustChange({
       ...startAdjustment,
-      x: clamp(startAdjustment.x - dxPct / startAdjustment.scale, 0, 1),
-      y: clamp(startAdjustment.y - dyPct / startAdjustment.scale, 0, 1),
+      x: panRangeX ? clamp(startAdjustment.x + deltaX / panRangeX, 0, 1) : startAdjustment.x,
+      y: panRangeY ? clamp(startAdjustment.y + deltaY / panRangeY, 0, 1) : startAdjustment.y,
     });
   }
 
@@ -299,11 +348,30 @@ function Slot({
         src={url}
         alt=""
         draggable={false}
-        className="absolute inset-0 h-full w-full object-cover pointer-events-none"
-        style={{
-          objectPosition: `${adj.x * 100}% ${adj.y * 100}%`,
-          transform: `scale(${adj.scale})`,
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
         }}
+        className="absolute pointer-events-none max-w-none"
+        style={(() => {
+          const size = drawSize(adj.scale);
+          // Tailwind's preflight resets img to max-width:100% / height:auto,
+          // which silently caps the explicit width/height below — without
+          // overriding both here, a zoomed-in image (wider/taller than the
+          // slot) gets squeezed back down, and the left/top math (worked
+          // out for the *intended* size) ends up pointing at empty space.
+          const base = { maxWidth: "none", maxHeight: "none" };
+          // Before the image has loaded and the container's been
+          // measured, fall back to a plain full-fill so nothing looks
+          // broken for that first instant — this gets replaced by the
+          // precise pixel placement below as soon as both are known.
+          if (!size) {
+            return { ...base, inset: 0, width: "100%", height: "100%", objectFit: "cover" as const };
+          }
+          const left = (containerSize.w - size.width) * adj.x;
+          const top = (containerSize.h - size.height) * adj.y;
+          return { ...base, left, top, width: size.width, height: size.height };
+        })()}
       />
 
       {uploading && (
