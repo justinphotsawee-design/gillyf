@@ -97,7 +97,7 @@ const ROWS: RowSpec[] = [
     leftWidthCm: 5,
     rightWidthCm: 4.3,
     heightCm: 3.8,
-    gapCm: 1.3,
+    gapCm: 1.1,
     showGap: true,
     // The center strip is its own uploadable photo, not derived from
     // another slot.
