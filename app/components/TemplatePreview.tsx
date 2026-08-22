@@ -56,10 +56,25 @@ const ROWS: {
   },
 ];
 
-function Slot({ url, label, widthPercent }: { url?: string; label: string; widthPercent: number }) {
+function Slot({
+  url,
+  label,
+  widthPercent,
+  uploading,
+  onClick,
+}: {
+  url?: string;
+  label: string;
+  widthPercent: number;
+  uploading?: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div
-      className="relative border border-dashed border-brand/30 bg-brand/5 flex items-center justify-center overflow-hidden"
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={uploading}
+      className="group relative border border-dashed border-brand/30 bg-brand/5 flex items-center justify-center overflow-hidden cursor-pointer disabled:cursor-wait"
       style={{ width: `${widthPercent}%` }}
     >
       {url ? (
@@ -68,12 +83,22 @@ function Slot({ url, label, widthPercent }: { url?: string; label: string; width
       ) : (
         <span className="text-brand/30 text-2xl leading-none">+</span>
       )}
+
+      {/* Hover/tap affordance for adding or replacing the photo */}
+      <span
+        className={`absolute inset-0 flex items-center justify-center bg-black/50 text-white text-xs font-medium transition-opacity ${
+          uploading ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+        }`}
+      >
+        {uploading ? "Uploading…" : url ? "Change photo" : "Add photo"}
+      </span>
+
       <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-white/90 drop-shadow-sm bg-black/0">
         <span className={url ? "bg-black/35 rounded px-1.5 py-0.5" : "text-brand-dark/40"}>
           {label}
         </span>
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -82,11 +107,17 @@ function Row({
   leftUrl,
   rightUrl,
   gapUrl,
+  leftUploading,
+  rightUploading,
+  onSlotClick,
 }: {
   row: (typeof ROWS)[number];
   leftUrl?: string;
   rightUrl?: string;
   gapUrl?: string;
+  leftUploading?: boolean;
+  rightUploading?: boolean;
+  onSlotClick: (slotKey: string) => void;
 }) {
   // When the pair isn't meant to show a physical seam (Back, Packaging),
   // the two photos sit flush against each other — the gap only exists
@@ -108,29 +139,18 @@ function Row({
       </div>
 
       <div className="flex items-stretch gap-2 w-full max-w-[480px]">
-        <div className="shrink-0 flex items-center justify-center text-[0.6rem] text-brand-dark/45 text-center min-w-[2.2rem]">
-          {row.heightCm}cm
-        </div>
-
         <div className="flex-1">
-          <div className="flex mb-1 text-[0.6rem] text-brand-dark/45">
-            <div style={{ width: `${leftPct}%` }} className="text-center">
-              {row.leftWidthCm}cm
-            </div>
-            {row.showGap && (
-              <div style={{ width: `${gapPct}%` }} className="text-center">
-                {row.gapCm}cm
-              </div>
-            )}
-            <div style={{ width: `${rightPct}%` }} className="text-center">
-              {row.rightWidthCm}cm
-            </div>
-          </div>
           <div
             className="flex rounded-lg overflow-hidden"
             style={{ aspectRatio: `${totalWidthCm} / ${row.heightCm}` }}
           >
-            <Slot url={leftUrl} label={row.leftLabel} widthPercent={leftPct} />
+            <Slot
+              url={leftUrl}
+              label={row.leftLabel}
+              widthPercent={leftPct}
+              uploading={leftUploading}
+              onClick={() => onSlotClick(row.leftKey)}
+            />
             {row.showGap && (
               <div
                 className="relative overflow-hidden bg-background"
@@ -150,6 +170,8 @@ function Row({
               url={rightUrl}
               label={row.rightLabel}
               widthPercent={rightPct}
+              uploading={rightUploading}
+              onClick={() => onSlotClick(row.rightKey)}
             />
           </div>
         </div>
@@ -160,8 +182,12 @@ function Row({
 
 export default function TemplatePreview({
   uploadedUrls,
+  uploadingSlots,
+  onSlotClick,
 }: {
   uploadedUrls: Record<string, string>;
+  uploadingSlots: Record<string, boolean>;
+  onSlotClick: (slotKey: string) => void;
 }) {
   return (
     <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-10 max-w-2xl mx-auto">
@@ -174,6 +200,10 @@ export default function TemplatePreview({
         </span>
       </div>
 
+      <p className="text-xs text-foreground/50 mb-6 -mt-2">
+        Click any section below to add or change its photo.
+      </p>
+
       <div className="space-y-6">
         {ROWS.map((row) => (
           <Row
@@ -182,6 +212,9 @@ export default function TemplatePreview({
             leftUrl={uploadedUrls[row.leftKey]}
             rightUrl={uploadedUrls[row.rightKey]}
             gapUrl={row.gapImageKey ? uploadedUrls[row.gapImageKey] : undefined}
+            leftUploading={uploadingSlots[row.leftKey]}
+            rightUploading={uploadingSlots[row.rightKey]}
+            onSlotClick={onSlotClick}
           />
         ))}
       </div>

@@ -98,6 +98,18 @@ export async function createPDF(
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+  // Fetch every distinct image once, in parallel, up front — drawing the
+  // rows below is otherwise a chain of sequential awaits (one Cloudinary
+  // round trip per slot), which on a slow connection can push the
+  // request well past the window in which mobile browsers still treat
+  // the client's follow-up window.open() as tied to the user's tap.
+  const urls = new Set(Object.values(images).filter((v): v is string => !!v));
+  const embeddedByUrl = new Map(
+    await Promise.all(
+      Array.from(urls, async (url) => [url, await tryEmbedImage(pdf, url)] as const)
+    )
+  );
+
   // A4 portrait
   const pageWidth = 595.28;
   const pageHeight = 841.89;
@@ -220,11 +232,10 @@ export async function createPDF(
       MUTED
     );
 
-    await drawSlot(
-      pdf,
+    drawSlot(
       page,
       font,
-      images[row.leftId],
+      embeddedForSlot(images, embeddedByUrl, row.leftId),
       row.leftLabel,
       boxStartX,
       boxBottomY,
@@ -234,7 +245,7 @@ export async function createPDF(
 
     if (row.showGap) {
       const gapImage = row.gapImageId
-        ? await tryEmbedImage(pdf, images[row.gapImageId])
+        ? embeddedForSlot(images, embeddedByUrl, row.gapImageId)
         : null;
 
       if (gapImage) {
@@ -257,11 +268,10 @@ export async function createPDF(
       }
     }
 
-    await drawSlot(
-      pdf,
+    drawSlot(
       page,
       font,
-      images[row.rightId],
+      embeddedForSlot(images, embeddedByUrl, row.rightId),
       row.rightLabel,
       boxStartX + leftW + gapW,
       boxBottomY,
@@ -303,18 +313,25 @@ function drawCenteredLabel(
   });
 }
 
-async function drawSlot(
-  pdf: PDFDocument,
+function embeddedForSlot(
+  images: Partial<Record<SlotId, string>>,
+  embeddedByUrl: Map<string, PDFImage | null>,
+  slot: SlotId
+): PDFImage | null {
+  const url = images[slot];
+  return url ? embeddedByUrl.get(url) ?? null : null;
+}
+
+function drawSlot(
   page: PDFPage,
   font: PDFFont,
-  url: string | undefined,
+  embedded: PDFImage | null,
   label: string,
   x: number,
   y: number,
   width: number,
   height: number
 ) {
-  const embedded = url ? await tryEmbedImage(pdf, url) : null;
   const labelText = label.toUpperCase();
   const labelSize = 7;
 

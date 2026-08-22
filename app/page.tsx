@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import UploadEditor from "./components/UploadEditor";
+import { useRef, useState } from "react";
 import TemplatePreview from "./components/TemplatePreview";
+import { uploadImage } from "./lib/upload";
 
 const slots = [
   { id: "coverFront", label: "Cover Front" },
@@ -24,14 +24,39 @@ export default function Home() {
   const [generating, setGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingSlotRef = useRef<string | null>(null);
+
   const anyUploading = Object.values(uploadingSlots).some(Boolean);
 
-  function handleUploaded(slotId: string, url: string) {
-    setUploadedUrls((prev) => ({ ...prev, [slotId]: url }));
+  function handleSlotClick(slotId: string) {
+    pendingSlotRef.current = slotId;
+    fileInputRef.current?.click();
   }
 
-  function handleUploadingChange(slotId: string, uploading: boolean) {
-    setUploadingSlots((prev) => ({ ...prev, [slotId]: uploading }));
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const slotId = pendingSlotRef.current;
+    if (!file || !slotId) return;
+
+    // Show an immediate local preview while the real upload happens.
+    setUploadedUrls((prev) => ({ ...prev, [slotId]: URL.createObjectURL(file) }));
+    setUploadingSlots((prev) => ({ ...prev, [slotId]: true }));
+
+    try {
+      const url = await uploadImage(file);
+      setUploadedUrls((prev) => ({ ...prev, [slotId]: url }));
+    } catch (error) {
+      console.error(`Upload failed for ${slotId}:`, error);
+      setStatusMessage(
+        "Couldn't save that photo to the server, so it won't appear in the PDF/email. Please try again."
+      );
+    } finally {
+      setUploadingSlots((prev) => ({ ...prev, [slotId]: false }));
+      pendingSlotRef.current = null;
+      // Allow re-selecting the same file again later.
+      e.target.value = "";
+    }
   }
 
   async function handleSaveDesign() {
@@ -55,6 +80,18 @@ export default function Home() {
   }
 
   async function handleGeneratePDF() {
+    const isMobile =
+      typeof navigator !== "undefined" &&
+      /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    // Mobile browsers only allow window.open() when it's called
+    // synchronously inside the click handler — any await before it (the
+    // fetch below can take a few seconds once deployed) makes them treat
+    // it as an untrusted popup and silently block it. Opening a blank tab
+    // right now, then pointing it at the PDF once it's ready, keeps the
+    // open() call inside the trusted gesture window.
+    const pendingTab = isMobile ? window.open("", "_blank") : null;
+
     setGenerating(true);
     setStatusMessage("");
     try {
@@ -73,15 +110,18 @@ export default function Home() {
           : new Blob([blob], { type: "application/pdf" });
       const url = URL.createObjectURL(pdfBlob);
 
-      const isMobile =
-        typeof navigator !== "undefined" &&
-        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
       if (isMobile) {
         // iOS/Android don't reliably honor the `download` attribute on
         // blob links. Opening the PDF in a new tab lets the phone's
         // built-in PDF viewer show its own Save/Share button instead.
-        window.open(url, "_blank");
+        if (pendingTab) {
+          pendingTab.location.href = url;
+        } else {
+          // The synchronous window.open() above was itself blocked
+          // (e.g. popups disabled entirely) — fall back to a same-tab
+          // navigation, which isn't blocked.
+          window.location.href = url;
+        }
       } else {
         const link = document.createElement("a");
         link.href = url;
@@ -95,6 +135,7 @@ export default function Home() {
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {
       console.error(error);
+      pendingTab?.close();
       setStatusMessage("Could not generate the PDF. Please try again.");
     } finally {
       setGenerating(false);
@@ -148,8 +189,8 @@ export default function Home() {
         </h1>
 
         <p className="text-foreground/60 mb-10 max-w-xl">
-          Upload and position artwork for each section — we&apos;ll turn it
-          into print-ready artwork.
+          Click any section in the preview below to add or change its photo
+          — we&apos;ll turn it into print-ready artwork.
         </p>
 
         {/* Progress */}
@@ -168,32 +209,19 @@ export default function Home() {
           />
         </div>
 
-        <TemplatePreview uploadedUrls={uploadedUrls} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+        />
 
-        <div className="grid lg:grid-cols-2 gap-6 mb-10">
-          {slots.map((slot) => {
-            const thumb = uploadedUrls[slot.id];
-            return (
-              <div
-                key={slot.id}
-                className="relative bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 border border-brand/10"
-              >
-                {thumb && (
-                  <span className="absolute top-6 right-6 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs">
-                    ✓
-                  </span>
-                )}
-                <UploadEditor
-                  slot={slot.label}
-                  onUploaded={(url) => handleUploaded(slot.id, url)}
-                  onUploadingChange={(uploading) =>
-                    handleUploadingChange(slot.id, uploading)
-                  }
-                />
-              </div>
-            );
-          })}
-        </div>
+        <TemplatePreview
+          uploadedUrls={uploadedUrls}
+          uploadingSlots={uploadingSlots}
+          onSlotClick={handleSlotClick}
+        />
 
         <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-8 border border-brand/10">
           <div className="flex flex-wrap gap-4">
