@@ -9,6 +9,7 @@ import { isInAppBrowser, isMobileBrowser } from "../lib/browser";
 
 const slots = [
   { id: "coverFront", label: "Cover Front" },
+  { id: "coverGap", label: "Cover Gap" },
   { id: "coverBack", label: "Cover Back" },
   { id: "backOuter", label: "Back Outer" },
   { id: "backInner", label: "Back Inner" },
@@ -18,7 +19,12 @@ const slots = [
 
 export default function Customize() {
   const router = useRouter();
-  const [customer] = useState<CustomerInfo | null>(() => loadCustomerInfo());
+  // sessionStorage doesn't exist during SSR, so this has to start as null
+  // (matching the server-rendered output) and get filled in after mount —
+  // reading it eagerly here would render different content on the server
+  // vs. the client's first pass and trigger a hydration mismatch.
+  const [customer, setCustomer] = useState<CustomerInfo | null>(null);
+  const [checkedCustomer, setCheckedCustomer] = useState(false);
   const [inAppBrowser] = useState(() => isInAppBrowser());
 
   const [uploadedUrls, setUploadedUrls] = useState<Record<string, string>>(
@@ -38,8 +44,16 @@ export default function Customize() {
   // first — bounce back there instead of showing a broken form if someone
   // lands here directly (bookmark, back button after clearing session, …).
   useEffect(() => {
-    if (!customer) router.replace("/");
-  }, [customer, router]);
+    const info = loadCustomerInfo();
+    // Reading sessionStorage (a browser-only API with no server
+    // equivalent) is exactly the "sync from an external system" case the
+    // set-state-in-effect rule carves out — it can't run any earlier than
+    // this without reintroducing the SSR/client mismatch above.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCustomer(info);
+    setCheckedCustomer(true);
+    if (!info) router.replace("/");
+  }, [router]);
 
   const anyUploading = Object.values(uploadingSlots).some(Boolean);
 
@@ -193,7 +207,10 @@ export default function Customize() {
 
   // Waiting on the sessionStorage check in the effect above — render
   // nothing rather than flashing the form before a possible redirect.
-  if (!customer) return null;
+  // Same null output on the server and the client's first pass avoids a
+  // hydration mismatch; the real content only appears after that check
+  // resolves on the client.
+  if (!checkedCustomer || !customer) return null;
 
   return (
     <main className="min-h-screen bg-background relative overflow-hidden">

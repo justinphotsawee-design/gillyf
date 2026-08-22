@@ -13,7 +13,8 @@ const ROWS: {
   heightCm: number;
   gapCm: number;
   showGap: boolean;
-  gapImageKey?: string;
+  gapLabel?: string;
+  gapKey?: string;
 }[] = [
   {
     title: "Cover",
@@ -24,11 +25,11 @@ const ROWS: {
     leftWidthCm: 5,
     rightWidthCm: 4.3,
     heightCm: 3.8,
-    gapCm: 1.5,
+    gapCm: 1.3,
     showGap: true,
-    // The center strip shows a sliver cropped from the middle of the Back
-    // Inner photo instead of sitting empty.
-    gapImageKey: "backInner",
+    // The center strip is its own uploadable photo.
+    gapLabel: "Gap",
+    gapKey: "coverGap",
   },
   {
     title: "Back",
@@ -109,6 +110,7 @@ function Row({
   gapUrl,
   leftUploading,
   rightUploading,
+  gapUploading,
   onSlotClick,
 }: {
   row: (typeof ROWS)[number];
@@ -117,6 +119,7 @@ function Row({
   gapUrl?: string;
   leftUploading?: boolean;
   rightUploading?: boolean;
+  gapUploading?: boolean;
   onSlotClick: (slotKey: string) => void;
 }) {
   // When the pair isn't meant to show a physical seam (Back, Packaging),
@@ -151,20 +154,14 @@ function Row({
               uploading={leftUploading}
               onClick={() => onSlotClick(row.leftKey)}
             />
-            {row.showGap && (
-              <div
-                className="relative overflow-hidden bg-background"
-                style={{ width: `${gapPct}%` }}
-              >
-                {gapUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={gapUrl}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                )}
-              </div>
+            {row.showGap && row.gapKey && (
+              <Slot
+                url={gapUrl}
+                label={row.gapLabel ?? "Gap"}
+                widthPercent={gapPct}
+                uploading={gapUploading}
+                onClick={() => onSlotClick(row.gapKey!)}
+              />
             )}
             <Slot
               url={rightUrl}
@@ -211,9 +208,10 @@ export default function TemplatePreview({
             row={row}
             leftUrl={uploadedUrls[row.leftKey]}
             rightUrl={uploadedUrls[row.rightKey]}
-            gapUrl={row.gapImageKey ? uploadedUrls[row.gapImageKey] : undefined}
+            gapUrl={row.gapKey ? uploadedUrls[row.gapKey] : undefined}
             leftUploading={uploadingSlots[row.leftKey]}
             rightUploading={uploadingSlots[row.rightKey]}
+            gapUploading={row.gapKey ? uploadingSlots[row.gapKey] : undefined}
             onSlotClick={onSlotClick}
           />
         ))}

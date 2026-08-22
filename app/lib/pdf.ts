@@ -21,6 +21,7 @@ const CM = 28.3465;
 // customer downloads matches the live preview on the site.
 export type SlotId =
   | "coverFront"
+  | "coverGap"
   | "coverBack"
   | "backOuter"
   | "backInner"
@@ -31,6 +32,7 @@ export type SlotId =
 // sync with ROWS below (same source the PDF layout itself uses).
 export const SLOT_LABELS: Record<SlotId, string> = {
   coverFront: "Cover Front",
+  coverGap: "Cover Gap",
   coverBack: "Cover Back",
   backOuter: "Back Outer",
   backInner: "Back Inner",
@@ -44,8 +46,6 @@ interface RowSpec {
   title: string;
   leftId: SlotId;
   rightId: SlotId;
-  leftLabel: string;
-  rightLabel: string;
   leftWidthCm: number;
   rightWidthCm: number;
   heightCm: number;
@@ -59,23 +59,19 @@ const ROWS: RowSpec[] = [
     title: "COVER",
     leftId: "coverFront",
     rightId: "coverBack",
-    leftLabel: "Front",
-    rightLabel: "Back",
     leftWidthCm: 5,
     rightWidthCm: 4.3,
     heightCm: 3.8,
-    gapCm: 1.5,
+    gapCm: 1.3,
     showGap: true,
-    // The center strip shows a sliver cropped from the middle of the Back
-    // Inner photo instead of sitting empty.
-    gapImageId: "backInner",
+    // The center strip is its own uploadable photo, not derived from
+    // another slot.
+    gapImageId: "coverGap",
   },
   {
     title: "BACK",
     leftId: "backOuter",
     rightId: "backInner",
-    leftLabel: "Outer",
-    rightLabel: "Inner",
     leftWidthCm: 4.1,
     rightWidthCm: 4.1,
     heightCm: 4.1,
@@ -86,8 +82,6 @@ const ROWS: RowSpec[] = [
     title: "PACKAGING",
     leftId: "packagingLeft",
     rightId: "packagingRight",
-    leftLabel: "Text",
-    rightLabel: "Image",
     leftWidthCm: 5,
     rightWidthCm: 4.3,
     heightCm: 3.8,
@@ -98,9 +92,8 @@ const ROWS: RowSpec[] = [
 
 // Brand palette, matching the web app's cream + deep-red theme.
 const BRAND = rgb(0.659, 0.125, 0.184); // #a8202f
-const CREAM = rgb(0.98, 0.953, 0.894); // #faf3e4 — same as --background
 const MUTED = rgb(0.55, 0.47, 0.49); // brand-dark at ~45% opacity look
-const DASH_BORDER = rgb(0.85, 0.45, 0.5);
+const DASH_BORDER = rgb(0.8, 0.8, 0.8); // light gray, not brand pink
 const HAIRLINE = rgb(0.82, 0.82, 0.82);
 const PLACEHOLDER_FILL = rgb(0.98, 0.96, 0.94);
 
@@ -196,7 +189,6 @@ export async function createPDF(
       page,
       font,
       embeddedForSlot(images, embeddedByUrl, row.leftId),
-      row.leftLabel,
       boxStartX,
       boxBottomY,
       leftW,
@@ -204,35 +196,23 @@ export async function createPDF(
     );
 
     if (row.showGap) {
-      const gapImage = row.gapImageId
-        ? embeddedForSlot(images, embeddedByUrl, row.gapImageId)
-        : null;
-
-      if (gapImage) {
-        drawImageCover(
-          page,
-          gapImage,
-          boxStartX + leftW,
-          boxBottomY,
-          gapW,
-          rowHeight
-        );
-      } else {
-        page.drawRectangle({
-          x: boxStartX + leftW,
-          y: boxBottomY,
-          width: gapW,
-          height: rowHeight,
-          color: CREAM,
-        });
-      }
+      drawSlot(
+        page,
+        font,
+        row.gapImageId
+          ? embeddedForSlot(images, embeddedByUrl, row.gapImageId)
+          : null,
+        boxStartX + leftW,
+        boxBottomY,
+        gapW,
+        rowHeight
+      );
     }
 
     drawSlot(
       page,
       font,
       embeddedForSlot(images, embeddedByUrl, row.rightId),
-      row.rightLabel,
       boxStartX + leftW + gapW,
       boxBottomY,
       rightW,
@@ -266,15 +246,11 @@ function drawSlot(
   page: PDFPage,
   font: PDFFont,
   embedded: PDFImage | null,
-  label: string,
   x: number,
   y: number,
   width: number,
   height: number
 ) {
-  const labelText = label.toUpperCase();
-  const labelSize = 7;
-
   if (embedded) {
     drawImageCover(page, embedded, x, y, width, height);
 
@@ -286,25 +262,6 @@ function drawSlot(
       borderWidth: 1,
       borderColor: DASH_BORDER,
       borderDashArray: [3, 2],
-    });
-
-    // Bottom label badge, matching the dark overlay chip in the preview.
-    const badgeHeight = 13;
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height: badgeHeight,
-      color: rgb(0, 0, 0),
-      opacity: 0.35,
-    });
-    const labelWidth = font.widthOfTextAtSize(labelText, labelSize);
-    page.drawText(labelText, {
-      x: x + (width - labelWidth) / 2,
-      y: y + 4,
-      size: labelSize,
-      font,
-      color: rgb(1, 1, 1),
     });
   } else {
     page.drawRectangle({
@@ -324,15 +281,6 @@ function drawSlot(
       size: 16,
       font,
       color: DASH_BORDER,
-    });
-
-    const labelWidth = font.widthOfTextAtSize(labelText, labelSize);
-    page.drawText(labelText, {
-      x: x + (width - labelWidth) / 2,
-      y: y + 8,
-      size: labelSize,
-      font,
-      color: MUTED,
     });
   }
 }
