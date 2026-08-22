@@ -1,11 +1,14 @@
-import { createPDF, SLOT_IDS, type SlotId } from "@/app/lib/pdf";
+import { createPDF, SLOT_IDS, type Adjustment, type SlotId } from "@/app/lib/pdf";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { images } = body as { images?: Record<string, string> };
+    const { images, adjustments } = body as {
+      images?: Record<string, string>;
+      adjustments?: Partial<Record<SlotId, Adjustment>>;
+    };
 
-    const pdfBytes = await createPDF(images ?? {});
+    const pdfBytes = await createPDF(images ?? {}, adjustments ?? {});
 
     return new Response(pdfBytes as BodyInit, {
       headers: {
@@ -32,12 +35,25 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const images: Partial<Record<SlotId, string>> = {};
+    const adjustments: Partial<Record<SlotId, Adjustment>> = {};
     for (const slotId of SLOT_IDS) {
       const url = searchParams.get(slotId);
       if (url) images[slotId] = url;
+
+      const scaleRaw = searchParams.get(`${slotId}_scale`);
+      const xRaw = searchParams.get(`${slotId}_x`);
+      const yRaw = searchParams.get(`${slotId}_y`);
+      if (scaleRaw !== null && xRaw !== null && yRaw !== null) {
+        const scale = Number(scaleRaw);
+        const x = Number(xRaw);
+        const y = Number(yRaw);
+        if (Number.isFinite(scale) && Number.isFinite(x) && Number.isFinite(y)) {
+          adjustments[slotId] = { scale, x, y };
+        }
+      }
     }
 
-    const pdfBytes = await createPDF(images);
+    const pdfBytes = await createPDF(images, adjustments);
 
     return new Response(pdfBytes as BodyInit, {
       headers: {

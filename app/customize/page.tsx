@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import TemplatePreview from "../components/TemplatePreview";
+import TemplatePreview, {
+  DEFAULT_ADJUSTMENT,
+  type Adjustment,
+} from "../components/TemplatePreview";
 import { uploadImage } from "../lib/upload";
 import { loadCustomerInfo, type CustomerInfo } from "../lib/customer";
 import { isInAppBrowser, isMobileBrowser } from "../lib/browser";
@@ -33,6 +36,9 @@ export default function Customize() {
   const [uploadingSlots, setUploadingSlots] = useState<
     Record<string, boolean>
   >({});
+  const [adjustments, setAdjustments] = useState<Record<string, Adjustment>>(
+    {}
+  );
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -62,6 +68,10 @@ export default function Customize() {
     fileInputRef.current?.click();
   }
 
+  function handleAdjustChange(slotId: string, next: Adjustment) {
+    setAdjustments((prev) => ({ ...prev, [slotId]: next }));
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     const slotId = pendingSlotRef.current;
@@ -79,6 +89,9 @@ export default function Customize() {
     // Show an immediate local preview while the real upload happens.
     setUploadedUrls((prev) => ({ ...prev, [slotId]: URL.createObjectURL(file) }));
     setUploadingSlots((prev) => ({ ...prev, [slotId]: true }));
+    // A new photo starts centered and unzoomed — carrying over the
+    // previous photo's crop would rarely still make sense.
+    setAdjustments((prev) => ({ ...prev, [slotId]: DEFAULT_ADJUSTMENT }));
     pendingSlotRef.current = null;
 
     try {
@@ -104,6 +117,7 @@ export default function Customize() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           images: uploadedUrls,
+          adjustments,
           customerName: customer.name,
           customerEmail: customer.email,
         }),
@@ -138,7 +152,12 @@ export default function Customize() {
       // the PDF instead) always works regardless.
       const params = new URLSearchParams();
       for (const [slotId, url] of Object.entries(uploadedUrls)) {
-        if (url) params.set(slotId, url);
+        if (!url) continue;
+        params.set(slotId, url);
+        const adj = adjustments[slotId] ?? DEFAULT_ADJUSTMENT;
+        params.set(`${slotId}_scale`, String(adj.scale));
+        params.set(`${slotId}_x`, String(adj.x));
+        params.set(`${slotId}_y`, String(adj.y));
       }
       window.location.href = `/api/generate-pdf?${params.toString()}`;
       return;
@@ -160,7 +179,7 @@ export default function Customize() {
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images: uploadedUrls }),
+        body: JSON.stringify({ images: uploadedUrls, adjustments }),
       });
 
       if (!res.ok) throw new Error("PDF generation failed");
@@ -283,6 +302,8 @@ export default function Customize() {
         <TemplatePreview
           uploadedUrls={uploadedUrls}
           uploadingSlots={uploadingSlots}
+          adjustments={adjustments}
+          onAdjustChange={handleAdjustChange}
           onSlotClick={handleSlotClick}
         />
 

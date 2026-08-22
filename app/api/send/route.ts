@@ -1,5 +1,5 @@
 import { getResend } from "@/lib/resend";
-import { createPDF, SLOT_LABELS, type SlotId } from "@/app/lib/pdf";
+import { createPDF, SLOT_LABELS, type Adjustment, type SlotId } from "@/app/lib/pdf";
 
 // Resend's shared test sender (onboarding@resend.dev) can only deliver to
 // the email address on the Resend account itself — it can't reach an
@@ -11,8 +11,9 @@ const CUSTOMER_FROM = process.env.CUSTOMER_EMAIL_FROM;
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { images, customerName, customerEmail } = body as {
+    const { images, adjustments, customerName, customerEmail } = body as {
       images?: Partial<Record<SlotId, string>>;
+      adjustments?: Partial<Record<SlotId, Adjustment>>;
       customerName?: string;
       customerEmail?: string;
     };
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
           .join("")
       : "";
 
-    const pdfBytes = await createPDF(images ?? {});
+    const pdfBytes = await createPDF(images ?? {}, adjustments ?? {});
     const pdfBuffer = Buffer.from(pdfBytes);
 
     const resend = getResend();

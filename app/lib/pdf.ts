@@ -42,6 +42,23 @@ export const SLOT_LABELS: Record<SlotId, string> = {
 
 export const SLOT_IDS = Object.keys(SLOT_LABELS) as SlotId[];
 
+// How a photo is framed within its slot. (x, y) is the point of the image
+// — as a 0..1 fraction from its top-left — that's favored when the "cover"
+// crop has to cut something off; 0.5/0.5 is centered (the old fixed
+// behavior). scale is relative to the minimum "cover" size (1 = exactly
+// fills the slot); above 1 zooms in, below 1 shrinks the photo smaller
+// than the slot. Mirrors the same knobs TemplatePreview.tsx exposes so
+// the PDF matches what the customer positioned on-site.
+export interface Adjustment {
+  scale: number;
+  x: number;
+  y: number;
+}
+
+export const DEFAULT_ADJUSTMENT: Adjustment = { scale: 1, x: 0.5, y: 0.5 };
+const MIN_SCALE = 0.3;
+const MAX_SCALE = 3;
+
 interface RowSpec {
   title: string;
   leftId: SlotId;
@@ -98,7 +115,8 @@ const HAIRLINE = rgb(0.82, 0.82, 0.82);
 const PLACEHOLDER_FILL = rgb(0.98, 0.96, 0.94);
 
 export async function createPDF(
-  images: Partial<Record<SlotId, string>>
+  images: Partial<Record<SlotId, string>>,
+  adjustments: Partial<Record<SlotId, Adjustment>> = {}
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -189,6 +207,7 @@ export async function createPDF(
       page,
       font,
       embeddedForSlot(images, embeddedByUrl, row.leftId),
+      adjustments[row.leftId],
       boxStartX,
       boxBottomY,
       leftW,
@@ -202,6 +221,7 @@ export async function createPDF(
         row.gapImageId
           ? embeddedForSlot(images, embeddedByUrl, row.gapImageId)
           : null,
+        row.gapImageId ? adjustments[row.gapImageId] : undefined,
         boxStartX + leftW,
         boxBottomY,
         gapW,
@@ -213,6 +233,7 @@ export async function createPDF(
       page,
       font,
       embeddedForSlot(images, embeddedByUrl, row.rightId),
+      adjustments[row.rightId],
       boxStartX + leftW + gapW,
       boxBottomY,
       rightW,
@@ -246,13 +267,18 @@ function drawSlot(
   page: PDFPage,
   font: PDFFont,
   embedded: PDFImage | null,
+  adjustment: Adjustment | undefined,
   x: number,
   y: number,
   width: number,
   height: number
 ) {
   if (embedded) {
-    drawImageCover(page, embedded, x, y, width, height);
+    // A shrunk (scale < 1) photo doesn't fill the slot — paint the same
+    // soft fill an empty slot uses underneath so the gap doesn't show
+    // the bare page.
+    page.drawRectangle({ x, y, width, height, color: PLACEHOLDER_FILL });
+    drawImageCover(page, embedded, adjustment ?? DEFAULT_ADJUSTMENT, x, y, width, height);
 
     page.drawRectangle({
       x,
@@ -285,22 +311,32 @@ function drawSlot(
   }
 }
 
-// "Cover" fit (like CSS object-fit: cover) — scale up so the photo fills
-// the whole area with no letterboxing, cropping the overflow via a clip
-// region, same as the object-cover thumbnails in the preview.
+// "Cover" fit (like CSS object-fit: cover) at adjustment.scale == 1 — the
+// photo fills the whole area with no letterboxing, cropping the overflow
+// via a clip region, same as the object-cover thumbnails in the preview.
+// `adjustment` re-centers that crop around (x, y) — a 0..1 fraction from
+// the image's top-left — instead of always centering, and scales past
+// (zoom in) or below (shrink, leaving the slot's fill visible around it)
+// that minimum cover size.
 function drawImageCover(
   page: PDFPage,
   image: PDFImage,
+  adjustment: Adjustment,
   x: number,
   y: number,
   width: number,
   height: number
 ) {
-  const scale = Math.max(width / image.width, height / image.height);
+  const coverScale = Math.max(width / image.width, height / image.height);
+  const userScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, adjustment.scale));
+  const scale = coverScale * userScale;
   const drawWidth = image.width * scale;
   const drawHeight = image.height * scale;
-  const drawX = x + (width - drawWidth) / 2;
-  const drawY = y + (height - drawHeight) / 2;
+  // PDF's y-axis runs bottom-up, so a "from the top" y fraction (matching
+  // the CSS side) has to flip: y=0 pins the image's top edge to the box's
+  // top edge, y=1 pins its bottom edge to the box's bottom.
+  const drawX = x - adjustment.x * (drawWidth - width);
+  const drawY = y + (height - drawHeight) * (1 - adjustment.y);
 
   page.pushOperators(
     pushGraphicsState(),
