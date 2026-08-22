@@ -19,13 +19,24 @@ const CM = 28.3465;
 // Mirrors app/components/TemplatePreview.tsx exactly — same rows, same
 // cm dimensions, same "no gap for Back/Packaging" layout — so the PDF a
 // customer downloads matches the live preview on the site.
-type SlotId =
+export type SlotId =
   | "coverFront"
   | "coverBack"
   | "backOuter"
   | "backInner"
   | "packagingLeft"
   | "packagingRight";
+
+// Slot id -> human label, e.g. for the order-notification email. Kept in
+// sync with ROWS below (same source the PDF layout itself uses).
+export const SLOT_LABELS: Record<SlotId, string> = {
+  coverFront: "Cover Front",
+  coverBack: "Cover Back",
+  backOuter: "Back Outer",
+  backInner: "Back Inner",
+  packagingLeft: "Packaging Left",
+  packagingRight: "Packaging Right",
+};
 
 interface RowSpec {
   title: string;
@@ -150,8 +161,6 @@ export async function createPDF(
 
   let cursorY = pageHeight - margin - 70;
   const rowGap = 44;
-  const measureLabelSize = 7;
-  const measureRowHeight = 12;
   const titleColWidth = 10;
   const colGap = 8;
 
@@ -162,20 +171,12 @@ export async function createPDF(
     const rowHeight = row.heightCm * CM;
     const boxesWidth = leftW + gapW + rightW;
 
-    const heightLabelText = `${row.heightCm}cm`;
-    const heightLabelWidth = font.widthOfTextAtSize(
-      heightLabelText,
-      measureLabelSize
-    );
-
-    const rowContentWidth =
-      titleColWidth + colGap + heightLabelWidth + colGap + boxesWidth;
+    const rowContentWidth = titleColWidth + colGap + boxesWidth;
     const rowStartX = (pageWidth - rowContentWidth) / 2;
 
-    const heightLabelX = rowStartX + titleColWidth + colGap;
-    const boxStartX = heightLabelX + heightLabelWidth + colGap;
+    const boxStartX = rowStartX + titleColWidth + colGap;
 
-    const boxTopY = cursorY - measureRowHeight;
+    const boxTopY = cursorY;
     const boxBottomY = boxTopY - rowHeight;
 
     // Section title, rotated to run vertically alongside the row.
@@ -188,49 +189,6 @@ export async function createPDF(
       color: MUTED,
       rotate: degrees(90),
     });
-
-    // Height label, horizontal, vertically centered on the row.
-    page.drawText(heightLabelText, {
-      x: heightLabelX,
-      y: boxBottomY + rowHeight / 2 - 3,
-      size: measureLabelSize,
-      font,
-      color: MUTED,
-    });
-
-    // Width labels above each box (and the gap, when there is one).
-    drawCenteredLabel(
-      page,
-      font,
-      `${row.leftWidthCm}cm`,
-      boxStartX,
-      leftW,
-      boxTopY + 4,
-      measureLabelSize,
-      MUTED
-    );
-    if (row.showGap) {
-      drawCenteredLabel(
-        page,
-        font,
-        `${row.gapCm}cm`,
-        boxStartX + leftW,
-        gapW,
-        boxTopY + 4,
-        measureLabelSize,
-        MUTED
-      );
-    }
-    drawCenteredLabel(
-      page,
-      font,
-      `${row.rightWidthCm}cm`,
-      boxStartX + leftW + gapW,
-      rightW,
-      boxTopY + 4,
-      measureLabelSize,
-      MUTED
-    );
 
     drawSlot(
       page,
@@ -291,26 +249,6 @@ export async function createPDF(
   });
 
   return pdf.save();
-}
-
-function drawCenteredLabel(
-  page: PDFPage,
-  font: PDFFont,
-  text: string,
-  areaX: number,
-  areaWidth: number,
-  y: number,
-  size: number,
-  color: ReturnType<typeof rgb>
-) {
-  const textWidth = font.widthOfTextAtSize(text, size);
-  page.drawText(text, {
-    x: areaX + (areaWidth - textWidth) / 2,
-    y,
-    size,
-    font,
-    color,
-  });
 }
 
 function embeddedForSlot(
