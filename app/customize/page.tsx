@@ -49,11 +49,21 @@ export default function Customize() {
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     const slotId = pendingSlotRef.current;
+
+    // Reset immediately (not in `finally` after the upload) so the input
+    // is ready to fire another change event right away. Otherwise picking
+    // a different slot while a prior upload is still in flight and
+    // choosing the same file path leaves the input's value unchanged —
+    // the browser sees no change and silently skips the event, and it
+    // looks like the click did nothing until the first upload finishes.
+    e.target.value = "";
+
     if (!file || !slotId) return;
 
     // Show an immediate local preview while the real upload happens.
     setUploadedUrls((prev) => ({ ...prev, [slotId]: URL.createObjectURL(file) }));
     setUploadingSlots((prev) => ({ ...prev, [slotId]: true }));
+    pendingSlotRef.current = null;
 
     try {
       const url = await uploadImage(file);
@@ -65,9 +75,6 @@ export default function Customize() {
       );
     } finally {
       setUploadingSlots((prev) => ({ ...prev, [slotId]: false }));
-      pendingSlotRef.current = null;
-      // Allow re-selecting the same file again later.
-      e.target.value = "";
     }
   }
 
