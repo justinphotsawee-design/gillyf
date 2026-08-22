@@ -19,6 +19,7 @@ const slots = [
 export default function Customize() {
   const router = useRouter();
   const [customer] = useState<CustomerInfo | null>(() => loadCustomerInfo());
+  const [inAppBrowser] = useState(() => isInAppBrowser());
 
   const [uploadedUrls, setUploadedUrls] = useState<Record<string, string>>(
     {}
@@ -111,8 +112,25 @@ export default function Customize() {
   }
 
   async function handleGeneratePDF() {
+    if (inAppBrowser) {
+      // In-app browsers (LINE, etc.) can't navigate to a blob: URL — it
+      // either renders blank (opened as a new tab, since that spawns a
+      // separate embedded webview that can't resolve a blob: URL created
+      // in this one) or triggers an "open external app?" prompt that goes
+      // nowhere (same-tab navigation to blob:). A plain GET URL sidesteps
+      // both: it's a normal https:// resource, no blob involved. Some
+      // in-app browsers still can't render a PDF response at all though
+      // (see the notice next to the button) — Save Design (which emails
+      // the PDF instead) always works regardless.
+      const params = new URLSearchParams();
+      for (const [slotId, url] of Object.entries(uploadedUrls)) {
+        if (url) params.set(slotId, url);
+      }
+      window.location.href = `/api/generate-pdf?${params.toString()}`;
+      return;
+    }
+
     const isMobile = isMobileBrowser();
-    const inApp = isInAppBrowser();
 
     // Mobile browsers only allow window.open() when it's called
     // synchronously inside the click handler — any await before it (the
@@ -120,12 +138,7 @@ export default function Customize() {
     // it as an untrusted popup and silently block it. Opening a blank tab
     // right now, then pointing it at the PDF once it's ready, keeps the
     // open() call inside the trusted gesture window.
-    //
-    // In-app browsers (LINE, etc.) skip this entirely — window.open()
-    // there hands the blob: URL to a separate embedded webview that can't
-    // resolve it (shows a blank page), so those navigate the current tab
-    // instead, which stays in the same browsing context.
-    const pendingTab = isMobile && !inApp ? window.open("", "_blank") : null;
+    const pendingTab = isMobile ? window.open("", "_blank") : null;
 
     setGenerating(true);
     setStatusMessage("");
@@ -148,14 +161,12 @@ export default function Customize() {
       if (isMobile) {
         // iOS/Android don't reliably honor the `download` attribute on
         // blob links. Opening the PDF in a new tab lets the phone's
-        // built-in PDF viewer show its own Save/Share button instead —
-        // except in-app browsers, which navigate in place (see above).
+        // built-in PDF viewer show its own Save/Share button instead.
         if (pendingTab) {
           pendingTab.location.href = url;
         } else {
-          // Either an in-app browser (by design) or the synchronous
-          // window.open() above got blocked anyway — same-tab
-          // navigation isn't subject to either problem.
+          // The synchronous window.open() above got blocked anyway —
+          // fall back to a same-tab navigation, which isn't blocked.
           window.location.href = url;
         }
       } else {
@@ -281,6 +292,16 @@ export default function Customize() {
             <p className="mt-4 text-sm text-brand">
               Still uploading one or more images — please wait a moment
               before saving or generating the PDF.
+            </p>
+          )}
+
+          {!anyUploading && inAppBrowser && (
+            <p className="mt-4 text-sm text-foreground/60">
+              You&apos;re viewing this inside an app (e.g. LINE), which
+              sometimes can&apos;t display a PDF directly — if &ldquo;Generate
+              PDF&rdquo; doesn&apos;t seem to do anything, use &ldquo;Save
+              Design&rdquo; instead and we&apos;ll email you the PDF, or open
+              this page in Safari/Chrome (⋯ menu → Open in Browser).
             </p>
           )}
 

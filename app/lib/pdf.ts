@@ -38,6 +38,8 @@ export const SLOT_LABELS: Record<SlotId, string> = {
   packagingRight: "Packaging Right",
 };
 
+export const SLOT_IDS = Object.keys(SLOT_LABELS) as SlotId[];
+
 interface RowSpec {
   title: string;
   leftId: SlotId;
