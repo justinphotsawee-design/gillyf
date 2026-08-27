@@ -37,6 +37,10 @@ const ROWS: {
   showGap: boolean;
   gapLabel?: string;
   gapKey?: string;
+  // Set when the right box is fixed printed artwork rather than a photo
+  // the customer uploads (see Packaging below) — points at the static
+  // image to show instead of an "Add photo" dropzone.
+  rightFixedUrl?: string;
 }[] = [
   {
     title: "Back",
@@ -71,11 +75,12 @@ const ROWS: {
     rightLabel: "Image",
     leftKey: "packagingLeft",
     rightKey: "packagingRight",
-    leftWidthCm: 10,
-    rightWidthCm: 10,
-    heightCm: 6.5,
+    leftWidthCm: 6.5,
+    rightWidthCm: 6.5,
+    heightCm: 10,
     gapCm: 1.5,
     showGap: false,
+    rightFixedUrl: "/pic/packaging-right.png",
   },
 ];
 
@@ -458,6 +463,37 @@ function Slot({
   );
 }
 
+// Fixed printed artwork (Packaging's right box) — not a photo the
+// customer uploads, so no click-to-add, drag, zoom, or remove; just a
+// static preview of what actually prints there.
+function FixedSlot({
+  url,
+  label,
+  widthPercent,
+}: {
+  url: string;
+  label: string;
+  widthPercent: number;
+}) {
+  return (
+    <div
+      className="relative border border-dashed border-brand/30 bg-brand/5 flex items-center justify-center overflow-hidden"
+      style={{ width: `${widthPercent}%` }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 h-full w-full object-cover pointer-events-none select-none"
+      />
+      <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-white/90 drop-shadow-sm pointer-events-none">
+        <span className="bg-black/35 rounded px-1.5 py-0.5">{label}</span>
+      </span>
+    </div>
+  );
+}
+
 function Row({
   row,
   leftUrl,
@@ -534,16 +570,24 @@ function Row({
                 onRemove={() => onRemove(row.gapKey!)}
               />
             )}
-            <Slot
-              url={rightUrl}
-              label={row.rightLabel}
-              widthPercent={rightPct}
-              uploading={rightUploading}
-              adjustment={rightAdjustment}
-              onAdjustChange={(next) => onAdjustChange(row.rightKey, next)}
-              onAddClick={() => onSlotClick(row.rightKey)}
-              onRemove={() => onRemove(row.rightKey)}
-            />
+            {row.rightFixedUrl ? (
+              <FixedSlot
+                url={row.rightFixedUrl}
+                label={row.rightLabel}
+                widthPercent={rightPct}
+              />
+            ) : (
+              <Slot
+                url={rightUrl}
+                label={row.rightLabel}
+                widthPercent={rightPct}
+                uploading={rightUploading}
+                adjustment={rightAdjustment}
+                onAdjustChange={(next) => onAdjustChange(row.rightKey, next)}
+                onAddClick={() => onSlotClick(row.rightKey)}
+                onRemove={() => onRemove(row.rightKey)}
+              />
+            )}
           </div>
         </div>
       </div>

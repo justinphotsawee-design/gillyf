@@ -17,7 +17,8 @@ const slots = [
   { id: "backOuter", label: "Back Outer" },
   { id: "backInner", label: "Back Inner" },
   { id: "packagingLeft", label: "Packaging Left" },
-  { id: "packagingRight", label: "Packaging Right" },
+  // Packaging Right is fixed printed artwork, not a customer upload — see
+  // TemplatePreview's rightFixedUrl / pdf.ts's packagingRightImage.
 ];
 
 export default function Customize() {

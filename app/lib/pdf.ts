@@ -44,6 +44,19 @@ function loadLogoBytes(): Uint8Array {
   return logoBytesCache;
 }
 
+// Packaging's right box is always the same printed insert (see
+// public/pic/final.pdf) rather than a customer photo — fixed artwork, not
+// a slot the customer fills in.
+let packagingRightBytesCache: Uint8Array | null = null;
+function loadPackagingRightBytes(): Uint8Array {
+  if (!packagingRightBytesCache) {
+    packagingRightBytesCache = fs.readFileSync(
+      path.join(process.cwd(), "public/pic/packaging-right.png")
+    );
+  }
+  return packagingRightBytesCache;
+}
+
 // Mirrors app/components/TemplatePreview.tsx exactly — same rows, same
 // cm dimensions, same "no gap for Back/Packaging" layout — so the PDF a
 // customer downloads matches the live preview on the site.
@@ -127,9 +140,9 @@ const ROWS: RowSpec[] = [
     title: "PACKAGING",
     leftId: "packagingLeft",
     rightId: "packagingRight",
-    leftWidthCm: 10,
-    rightWidthCm: 10,
-    heightCm: 6.5,
+    leftWidthCm: 6.5,
+    rightWidthCm: 6.5,
+    heightCm: 10,
     gapCm: 1.5,
     showGap: false,
   },
@@ -160,6 +173,7 @@ export async function createPDF(
   // it renders Latin fine too, so it's simplest to use it for the name
   // line unconditionally rather than picking a font per-name.
   const nameFont = await pdf.embedFont(loadThaiFontBytes());
+  const packagingRightImage = await pdf.embedPng(loadPackagingRightBytes());
 
   // Fetch every distinct image once, in parallel, up front — drawing the
   // rows below is otherwise a chain of sequential awaits (one Cloudinary
@@ -311,8 +325,12 @@ export async function createPDF(
     drawSlot(
       page,
       font,
-      embeddedForSlot(images, embeddedByUrl, row.rightId),
-      adjustments[row.rightId],
+      row.rightId === "packagingRight"
+        ? packagingRightImage
+        : embeddedForSlot(images, embeddedByUrl, row.rightId),
+      row.rightId === "packagingRight"
+        ? DEFAULT_ADJUSTMENT
+        : adjustments[row.rightId],
       boxStartX + leftW + gapW,
       boxBottomY,
       rightW,
