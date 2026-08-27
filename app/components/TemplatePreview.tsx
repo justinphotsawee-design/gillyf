@@ -77,7 +77,7 @@ const ROWS: {
     rightKey: "packagingRight",
     leftWidthCm: 6.5,
     rightWidthCm: 6.5,
-    heightCm: 10,
+    heightCm: 10.2,
     gapCm: 1.5,
     showGap: false,
     rightFixedUrl: "/pic/packaging-right.png",
