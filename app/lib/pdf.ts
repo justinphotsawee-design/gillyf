@@ -34,6 +34,16 @@ function loadThaiFontBytes(): Uint8Array {
   return thaiFontBytesCache;
 }
 
+let logoBytesCache: Uint8Array | null = null;
+function loadLogoBytes(): Uint8Array {
+  if (!logoBytesCache) {
+    logoBytesCache = fs.readFileSync(
+      path.join(process.cwd(), "public/pic/IMG_2488.JPG")
+    );
+  }
+  return logoBytesCache;
+}
+
 // Mirrors app/components/TemplatePreview.tsx exactly — same rows, same
 // cm dimensions, same "no gap for Back/Packaging" layout — so the PDF a
 // customer downloads matches the live preview on the site.
@@ -117,9 +127,9 @@ const ROWS: RowSpec[] = [
     title: "PACKAGING",
     leftId: "packagingLeft",
     rightId: "packagingRight",
-    leftWidthCm: 5,
-    rightWidthCm: 4.3,
-    heightCm: 3.8,
+    leftWidthCm: 10,
+    rightWidthCm: 10,
+    heightCm: 6.5,
     gapCm: 1.5,
     showGap: false,
   },
@@ -182,19 +192,20 @@ export async function createPDF(
 
   const contentX = margin + 24;
 
-  // Header — "Gilly  NFC CD KEYCHAIN", same single line as the on-site
-  // preview (pdf-lib's built-in fonts can't render the script wordmark,
-  // so this uses bold brand-colored text as the closest match).
-  page.drawText("Gilly", {
+  // Header — logo + "NFC CD KEYCHAIN", same single line as the on-site
+  // preview.
+  const logoImage = await pdf.embedJpg(loadLogoBytes());
+  const logoHeight = 50;
+  const logoWidth = logoHeight * (logoImage.width / logoImage.height);
+  const logoY = pageHeight - margin - 8 - logoHeight;
+  page.drawImage(logoImage, {
     x: contentX,
-    y: pageHeight - margin - 34,
-    size: 20,
-    font: boldFont,
-    color: BRAND,
+    y: logoY,
+    width: logoWidth,
+    height: logoHeight,
   });
-  const gillyWidth = boldFont.widthOfTextAtSize("Gilly", 20);
   page.drawText("NFC CD KEYCHAIN", {
-    x: contentX + gillyWidth + 10,
+    x: contentX + logoWidth + 10,
     y: pageHeight - margin - 30,
     size: 8,
     font,
