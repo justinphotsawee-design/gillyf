@@ -568,10 +568,12 @@ export default function TemplatePreview({
 }) {
   return (
     <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-10 max-w-2xl mx-auto">
-      <div className="flex items-baseline gap-2 mb-6">
-        <span className="font-script text-2xl text-brand leading-none">
-          Gilly
-        </span>
+      <div className="flex items-center gap-2 mb-6">
+        <img
+          src="/pic/IMG_2488.png"
+          alt="Gilly"
+          className="h-10 w-auto object-contain"
+        />
         <span className="text-[0.65rem] tracking-[0.3em] text-brand-dark/50 uppercase">
           NFC CD Keychain
         </span>

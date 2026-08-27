@@ -36,15 +36,11 @@ export default function Welcome() {
 
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-xl shadow-brand/5 p-8 sm:p-10 border border-brand/10">
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="h-14 w-14 shrink-0 rounded-full border-2 border-brand flex items-center justify-center bg-white mb-3">
-            <span className="font-script text-3xl text-brand leading-none">
-              G
-            </span>
-          </div>
-          <p className="font-script text-3xl text-brand -mb-1">Gilly</p>
-          <p className="text-[0.6rem] tracking-[0.35em] text-brand-dark/60 uppercase mb-4">
-            Gift &amp; Craft
-          </p>
+          <img
+            src="/pic/IMG_2488.JPG"
+            alt="Gilly Gift & Craft"
+            className="h-24 w-auto mb-4"
+          />
           <h1 className="font-display text-2xl font-bold text-foreground">
             What&apos;s your name?
           </h1>

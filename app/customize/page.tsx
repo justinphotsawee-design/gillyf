@@ -271,16 +271,12 @@ export default function Customize() {
       <header className="relative border-b border-brand/10 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 shrink-0 rounded-full border-2 border-brand flex items-center justify-center bg-white">
-              <span className="font-script text-2xl text-brand leading-none">
-                G
-              </span>
-            </div>
-            <div className="leading-tight">
-              <p className="font-script text-2xl text-brand -mb-1">Gilly</p>
-              <p className="text-[0.6rem] tracking-[0.35em] text-brand-dark/60 uppercase">
-                Gift &amp; Craft
-              </p>
+            <div className="relative h-11 w-24 shrink-0">
+              <img
+                src="/pic/IMG_2488.png"
+                alt="Gilly Gift & Craft"
+                className="absolute left-0 top-1/2 -translate-y-1/2 h-24 w-48 object-cover object-center"
+              />
             </div>
           </div>
           <p className="text-sm text-foreground/60">
