@@ -19,12 +19,13 @@ export default function Welcome() {
       return;
     }
 
+    setError("");
     saveCustomerInfo({ name: trimmedName });
     router.push("/customize");
   }
 
   return (
-    <main className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center px-6">
+    <main className="min-h-dvh bg-background relative overflow-hidden flex items-center justify-center px-6">
       <div
         aria-hidden
         className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-brand/10 blur-3xl"
@@ -39,6 +40,8 @@ export default function Welcome() {
           <img
             src="/pic/IMG_2488.JPG"
             alt="Gilly Gift & Craft"
+            width={1280}
+            height={1280}
             className="h-24 w-auto mb-4"
           />
           <h1 className="font-display text-2xl font-bold text-foreground">

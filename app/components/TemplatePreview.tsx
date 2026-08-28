@@ -187,6 +187,13 @@ function Slot({
     startDist: number;
     startScale: number;
   } | null>(null);
+  // A tap opens the delete overlay with its "Remove photo" button centered
+  // right under the finger/cursor — the second tap of a double-click (meant
+  // to hit the double-click-to-reset gesture below) then lands squarely on
+  // that button and deletes the photo instead. Deferring the toggle lets a
+  // same-spot second tap arrive in time to cancel it, so a real double-click
+  // resets zoom like it's supposed to instead of deleting the photo.
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const adj = adjustment ?? DEFAULT_ADJUSTMENT;
 
@@ -212,6 +219,16 @@ function Slot({
     setNaturalSize(null);
     setShowDelete(false);
   }
+
+  // Refs can't be touched during render (see the state resets above,
+  // which use React's blessed "adjust state when a prop changes"
+  // pattern instead) — so the pending-tap timer is cleared here instead,
+  // keyed on the same `url` change plus unmount.
+  useEffect(() => {
+    return () => {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    };
+  }, [url]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -336,7 +353,29 @@ function Slot({
         e.clientY - dragRef.current.startClientY
       );
       dragRef.current = null;
-      if (moved < 6) setShowDelete((prev) => !prev);
+      if (moved < 6) {
+        if (showDelete) {
+          // Dismissing: nothing new is about to appear under the
+          // pointer, so there's no race to guard against here.
+          setShowDelete(false);
+        } else if (tapTimerRef.current) {
+          // This is the second tap of a double-click arriving before the
+          // first tap's deferred open below fired — treat the pair as
+          // the double-click-to-reset gesture (see onDoubleClick), not
+          // two single taps.
+          clearTimeout(tapTimerRef.current);
+          tapTimerRef.current = null;
+        } else {
+          // Defer opening the delete overlay: if a second same-spot tap
+          // (i.e. a double-click) arrives within the window above, it
+          // cancels this instead of landing on the "Remove photo" button
+          // that would otherwise have just appeared under the cursor.
+          tapTimerRef.current = setTimeout(() => {
+            tapTimerRef.current = null;
+            setShowDelete(true);
+          }, 300);
+        }
+      }
     }
   }
 
@@ -616,6 +655,8 @@ export default function TemplatePreview({
         <img
           src="/pic/IMG_2488.png"
           alt="Gilly"
+          width={1280}
+          height={1280}
           className="h-10 w-auto object-contain"
         />
         <span className="text-[0.65rem] tracking-[0.3em] text-brand-dark/50 uppercase">

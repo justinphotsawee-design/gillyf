@@ -257,7 +257,7 @@ export default function Customize() {
   if (!checkedCustomer || !customer) return null;
 
   return (
-    <main className="min-h-screen bg-background relative overflow-hidden">
+    <main className="min-h-dvh bg-background relative overflow-hidden">
       {/* Soft decorative glow — purely atmospheric, ignore for layout */}
       <div
         aria-hidden
