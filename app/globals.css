@@ -23,3 +23,13 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Without this, pulling down past the top of the page (easy to do by
+   accident while dragging/repositioning a photo near the top of
+   /customize) triggers the browser's native rubber-band bounce and, on
+   Chrome/Android, its pull-to-refresh reload — which wipes every uploaded
+   photo and crop adjustment, since none of that is persisted anywhere
+   except the customer's name. */
+html, body {
+  overscroll-behavior-y: contain;
+}
