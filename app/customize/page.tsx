@@ -8,6 +8,7 @@ import TemplatePreview, {
 } from "../components/TemplatePreview";
 import { uploadImage } from "../lib/upload";
 import { loadCustomerInfo, type CustomerInfo } from "../lib/customer";
+import { loadDesignProgress, saveDesignProgress } from "../lib/design";
 import { isInAppBrowser, isMobileBrowser } from "../lib/browser";
 
 const slots = [
@@ -45,6 +46,10 @@ export default function Customize() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingSlotRef = useRef<string | null>(null);
+  // Guards the save effect below from firing (and overwriting the saved
+  // progress with the empty initial state) before the load below has had
+  // a chance to run — see that effect's comment.
+  const hydratedRef = useRef(false);
 
   // This page requires the name/email gate on "/" to have been completed
   // first — bounce back there instead of showing a broken form if someone
@@ -58,8 +63,36 @@ export default function Customize() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCustomer(info);
     setCheckedCustomer(true);
-    if (!info) router.replace("/");
-  }, [router]);
+    if (!info) {
+      router.replace("/");
+      return;
+    }
+    // Restore any photos/positions from a previous visit in this same
+    // session — e.g. the customer navigated away to view/download the
+    // generated PDF and hit the browser's back button to return here.
+    // Without this, that state (which only ever lived in this component's
+    // React state) is just gone, and they'd have to re-upload everything.
+    const saved = loadDesignProgress();
+    if (saved) {
+      setUploadedUrls(saved.uploadedUrls);
+      setAdjustments(saved.adjustments);
+    }
+    hydratedRef.current = true;
+    // Deliberately run once on mount only — this is a one-time "check
+    // sessionStorage before the first paint of real content" gate, not
+    // something that should re-run if `router` ever changes identity
+    // (Next's useRouter() is normally stable, but nothing here needs it
+    // to be: `router.replace` is only ever called with a fixed path).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist on every change so the restore above always has the latest
+  // state to work with, not just whatever existed at the last explicit
+  // save point.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    saveDesignProgress({ uploadedUrls, adjustments });
+  }, [uploadedUrls, adjustments]);
 
   const anyUploading = Object.values(uploadingSlots).some(Boolean);
 
