@@ -141,6 +141,23 @@ export default function Customize() {
     }
   }
 
+  // Builds the same query string the GET /api/generate-pdf route reads,
+  // so navigating straight to that URL renders without ever creating a
+  // blob: URL — see handleGeneratePDF for why that matters on mobile.
+  function buildPdfUrl(): string {
+    const params = new URLSearchParams();
+    for (const [slotId, url] of Object.entries(uploadedUrls)) {
+      if (!url) continue;
+      params.set(slotId, url);
+      const adj = adjustments[slotId] ?? DEFAULT_ADJUSTMENT;
+      params.set(`${slotId}_scale`, String(adj.scale));
+      params.set(`${slotId}_x`, String(adj.x));
+      params.set(`${slotId}_y`, String(adj.y));
+    }
+    if (customer?.name) params.set("customerName", customer.name);
+    return `/api/generate-pdf?${params.toString()}`;
+  }
+
   async function handleGeneratePDF() {
     if (inAppBrowser) {
       // In-app browsers (LINE, etc.) can't navigate to a blob: URL — it
@@ -160,18 +177,7 @@ export default function Customize() {
           "We couldn't send your order automatically — please contact us to confirm it went through."
         );
       }
-
-      const params = new URLSearchParams();
-      for (const [slotId, url] of Object.entries(uploadedUrls)) {
-        if (!url) continue;
-        params.set(slotId, url);
-        const adj = adjustments[slotId] ?? DEFAULT_ADJUSTMENT;
-        params.set(`${slotId}_scale`, String(adj.scale));
-        params.set(`${slotId}_x`, String(adj.x));
-        params.set(`${slotId}_y`, String(adj.y));
-      }
-      if (customer?.name) params.set("customerName", customer.name);
-      window.location.href = `/api/generate-pdf?${params.toString()}`;
+      window.location.href = buildPdfUrl();
       return;
     }
 
@@ -188,6 +194,33 @@ export default function Customize() {
     setGenerating(true);
     setStatusMessage("");
     try {
+      if (isMobile) {
+        // Same reasoning as the in-app-browser branch above: a blob: URL
+        // only resolves in the browsing context that created it. On
+        // desktop that's not an issue because window.open() there reuses
+        // the opener's process, but on Android Chrome a window.open()
+        // tab commonly ends up in a *different* renderer process, so
+        // handing that tab a blob: URL created back in the opener just
+        // fails silently — the tab stays blank. Point it at the plain
+        // GET URL instead: a normal https:// navigation, no blob
+        // involved, so it works the same regardless of process.
+        const shopSent = await notifyShop();
+        const pdfUrl = buildPdfUrl();
+        if (pendingTab) {
+          pendingTab.location.href = pdfUrl;
+        } else {
+          // The synchronous window.open() above got blocked anyway —
+          // fall back to a same-tab navigation, which isn't blocked.
+          window.location.href = pdfUrl;
+        }
+        setStatusMessage(
+          shopSent
+            ? "Your PDF is ready and your order has been sent!"
+            : "Your PDF is ready, but we couldn't send your order automatically — please contact us to confirm it went through."
+        );
+        return;
+      }
+
       const [shopSent, res] = await Promise.all([
         notifyShop(),
         fetch("/api/generate-pdf", {
@@ -210,25 +243,12 @@ export default function Customize() {
           : new Blob([blob], { type: "application/pdf" });
       const url = URL.createObjectURL(pdfBlob);
 
-      if (isMobile) {
-        // iOS/Android don't reliably honor the `download` attribute on
-        // blob links. Opening the PDF in a new tab lets the phone's
-        // built-in PDF viewer show its own Save/Share button instead.
-        if (pendingTab) {
-          pendingTab.location.href = url;
-        } else {
-          // The synchronous window.open() above got blocked anyway —
-          // fall back to a same-tab navigation, which isn't blocked.
-          window.location.href = url;
-        }
-      } else {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "keychain-order.pdf";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "keychain-order.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
 
       // Give the browser time to open/download before revoking the URL.
       setTimeout(() => URL.revokeObjectURL(url), 60_000);

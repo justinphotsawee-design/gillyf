@@ -1,6 +1,5 @@
 import {
   PDFDocument,
-  PDFFont,
   PDFImage,
   PDFPage,
   degrees,
@@ -298,7 +297,6 @@ export async function createPDF(
 
     drawSlot(
       page,
-      font,
       embeddedForSlot(images, embeddedByUrl, row.leftId),
       adjustments[row.leftId],
       boxStartX,
@@ -310,7 +308,6 @@ export async function createPDF(
     if (row.showGap) {
       drawSlot(
         page,
-        font,
         row.gapImageId
           ? embeddedForSlot(images, embeddedByUrl, row.gapImageId)
           : null,
@@ -324,7 +321,6 @@ export async function createPDF(
 
     drawSlot(
       page,
-      font,
       row.rightId === "packagingRight"
         ? packagingRightImage
         : embeddedForSlot(images, embeddedByUrl, row.rightId),
@@ -362,7 +358,6 @@ function embeddedForSlot(
 
 function drawSlot(
   page: PDFPage,
-  font: PDFFont,
   embedded: PDFImage | null,
   adjustment: Adjustment | undefined,
   x: number,
@@ -387,6 +382,10 @@ function drawSlot(
       borderDashArray: [3, 2],
     });
   } else {
+    // No "+" here (unlike the on-site editor's empty slot) — that's an
+    // "add a photo" affordance for the interactive page, not something
+    // that belongs on print-ready artwork. An empty slot just prints as
+    // a blank placeholder box.
     page.drawRectangle({
       x,
       y,
@@ -396,14 +395,6 @@ function drawSlot(
       borderWidth: 1,
       borderColor: DASH_BORDER,
       borderDashArray: [3, 2],
-    });
-
-    page.drawText("+", {
-      x: x + width / 2 - 4,
-      y: y + height / 2 - 6,
-      size: 16,
-      font,
-      color: DASH_BORDER,
     });
   }
 }

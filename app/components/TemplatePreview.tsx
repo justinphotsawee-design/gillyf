@@ -175,6 +175,13 @@ function Slot({
     pointerId: number;
     startClientX: number;
     startClientY: number;
+    // Updated on every move — unlike startClientX/Y, which stays pinned
+    // to the down-position for the whole drag. Needed so that if a
+    // second finger lands mid-drag (starting a pinch), the pinch can
+    // seed itself from where the first finger actually is *now* rather
+    // than where it was when it first touched down.
+    lastClientX: number;
+    lastClientY: number;
     startAdjustment: Adjustment;
     // Pan range in each axis at drag-start (container size minus the
     // drawn image size at that zoom level) — captured once so a fast
@@ -280,10 +287,19 @@ function Slot({
 
     if (dragRef.current && dragRef.current.pointerId !== e.pointerId) {
       // A second, different finger came down mid-drag — switch to
-      // pinch-zoom.
+      // pinch-zoom. Seed the first finger's point from its *current*
+      // (last-moved-to) position, not its original down-position — the
+      // two touches essentially never land in the same instant, so by
+      // the time the second finger arrives the first one has usually
+      // already drifted. Using the stale down-position here skews
+      // startDist away from the real initial finger separation, which
+      // then either overshoots or undershoots every ratio computed
+      // afterwards — the zoom gesture reads as unresponsive or
+      // stuck, especially when it makes startDist too large to ever
+      // exceed while spreading fingers apart (i.e. "can't zoom in").
       pinchRef.current = {
         pointers: new Map([
-          [dragRef.current.pointerId, { x: dragRef.current.startClientX, y: dragRef.current.startClientY }],
+          [dragRef.current.pointerId, { x: dragRef.current.lastClientX, y: dragRef.current.lastClientY }],
           [e.pointerId, { x: e.clientX, y: e.clientY }],
         ]),
         startDist: 0,
@@ -300,6 +316,8 @@ function Slot({
       pointerId: e.pointerId,
       startClientX: e.clientX,
       startClientY: e.clientY,
+      lastClientX: e.clientX,
+      lastClientY: e.clientY,
       startAdjustment: adj,
       panRangeX: size ? containerSize.w - size.width : 0,
       panRangeY: size ? containerSize.h - size.height : 0,
@@ -321,6 +339,8 @@ function Slot({
     }
 
     if (!dragRef.current || dragRef.current.pointerId !== e.pointerId) return;
+    dragRef.current.lastClientX = e.clientX;
+    dragRef.current.lastClientY = e.clientY;
     const deltaX = e.clientX - dragRef.current.startClientX;
     const deltaY = e.clientY - dragRef.current.startClientY;
     const { startAdjustment, panRangeX, panRangeY } = dragRef.current;
@@ -340,7 +360,29 @@ function Slot({
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (pinchRef.current?.pointers.has(e.pointerId)) {
       pinchRef.current.pointers.delete(e.pointerId);
-      if (pinchRef.current.pointers.size < 2) pinchRef.current = null;
+      if (pinchRef.current.pointers.size < 2) {
+        // One finger lifted mid-pinch. Resume as a plain drag with
+        // whichever finger is still down instead of going dead — without
+        // this, the still-down finger's moves are silently dropped
+        // (neither ref claims that pointerId anymore) until it also
+        // lifts, which reads as "zoom just stopped working".
+        const remaining = Array.from(pinchRef.current.pointers.entries())[0];
+        pinchRef.current = null;
+        if (remaining) {
+          const [remainingId, pos] = remaining;
+          const size = drawSize(adj.scale);
+          dragRef.current = {
+            pointerId: remainingId,
+            startClientX: pos.x,
+            startClientY: pos.y,
+            lastClientX: pos.x,
+            lastClientY: pos.y,
+            startAdjustment: adj,
+            panRangeX: size ? containerSize.w - size.width : 0,
+            panRangeY: size ? containerSize.h - size.height : 0,
+          };
+        }
+      }
       return;
     }
     if (dragRef.current?.pointerId === e.pointerId) {

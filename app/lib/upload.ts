@@ -4,7 +4,17 @@ const MAX_DIMENSION = 1600;
 
 async function shrinkForUpload(file: File): Promise<File> {
   try {
-    const bitmap = await createImageBitmap(file);
+    // Phone cameras (especially a portrait-held iPhone) commonly store
+    // the photo physically sideways/upside-down and rely on an EXIF
+    // orientation tag to display it upright — <img> tags apply that tag
+    // automatically, but createImageBitmap only does by default on
+    // newer engines. Without this explicit option, an older engine
+    // reads the raw sideways pixels, so the *uploaded* copy (what
+    // actually ends up in the PDF/print) comes out rotated even though
+    // the on-page preview (a plain <img>) looked correctly upright.
+    const bitmap = await createImageBitmap(file, {
+      imageOrientation: "from-image",
+    });
     const scale = Math.min(
       1,
       MAX_DIMENSION / Math.max(bitmap.width, bitmap.height)
