@@ -141,10 +141,10 @@ export default function Customize() {
     }
   }
 
-  // Builds the same query string the GET /api/generate-pdf route reads,
-  // so navigating straight to that URL renders without ever creating a
-  // blob: URL — see handleGeneratePDF for why that matters on mobile.
-  function buildPdfUrl(): string {
+  // Shared by buildPdfUrl and buildOrderUrl — both routes read the exact
+  // same query shape (see /api/generate-pdf's GET handler and
+  // app/order/page.tsx), just rendering it differently.
+  function buildOrderParams(): URLSearchParams {
     const params = new URLSearchParams();
     for (const [slotId, url] of Object.entries(uploadedUrls)) {
       if (!url) continue;
@@ -155,7 +155,43 @@ export default function Customize() {
       params.set(`${slotId}_y`, String(adj.y));
     }
     if (customer?.name) params.set("customerName", customer.name);
-    return `/api/generate-pdf?${params.toString()}`;
+    return params;
+  }
+
+  // Builds the same query string the GET /api/generate-pdf route reads,
+  // so navigating straight to that URL renders without ever creating a
+  // blob: URL — see handleGeneratePDF for why that matters on mobile.
+  function buildPdfUrl(): string {
+    return `/api/generate-pdf?${buildOrderParams().toString()}`;
+  }
+
+  // A plain HTML page (no PDF, no blob: URL) showing the finished design —
+  // meant to be shared as-is (e.g. pasted into LINE) so the shop can just
+  // open it, instead of trying to forward the PDF itself, which breaks
+  // when the sender's copy of it is a blob: URL (see handleGeneratePDF).
+  function buildOrderUrl(): string {
+    return `${window.location.origin}/order?${buildOrderParams().toString()}`;
+  }
+
+  async function handleShareLink() {
+    const url = buildOrderUrl();
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "My NFC CD Keychain order", url });
+        return;
+      } catch {
+        // User cancelled the share sheet, or the platform rejected it —
+        // fall through to the clipboard copy below rather than leaving
+        // them with no way to get the link at all.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatusMessage("Link copied! Paste it into LINE to send it to us.");
+    } catch (error) {
+      console.error("Failed to copy order link:", error);
+      setStatusMessage(`Here's your order link: ${url}`);
+    }
   }
 
   async function handleGeneratePDF() {
@@ -357,6 +393,14 @@ export default function Customize() {
               className="bg-brand hover:bg-brand-dark text-white px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition shadow-lg shadow-brand/20 hover:shadow-brand/30"
             >
               {generating ? "Generating..." : "Generate PDF"}
+            </button>
+
+            <button
+              onClick={handleShareLink}
+              disabled={anyUploading || completedCount === 0}
+              className="bg-white hover:bg-brand/5 text-brand border border-brand/30 px-6 py-3 rounded-xl font-medium disabled:opacity-50 transition"
+            >
+              Share Link
             </button>
           </div>
 

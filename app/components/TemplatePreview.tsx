@@ -24,7 +24,10 @@ function clamp(value: number, min: number, max: number) {
 
 // Mirrors the real-world cm dimensions in app/lib/pdf.ts (SLOTS / GAP_CM)
 // so this preview lines up with what actually prints.
-const ROWS: {
+// Exported so OrderPreview.tsx (the read-only page rendered at the
+// shareable /order link) lays out the exact same rows/keys/dimensions
+// instead of a second copy that could drift out of sync.
+export const ROWS: {
   title: string;
   leftLabel: string;
   rightLabel: string;
