@@ -63,4 +63,12 @@ describe("GET /api/generate-pdf (in-app-browser fallback path)", () => {
     const res = await GET(new Request("http://localhost/api/generate-pdf"));
     expect(res.status).toBe(200);
   });
+
+  it("returns an attachment (downloadable) PDF when ?download=1 is set", async () => {
+    const res = await GET(
+      new Request("http://localhost/api/generate-pdf?download=1")
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toContain("attachment");
+  });
 });

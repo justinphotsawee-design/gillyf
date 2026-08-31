@@ -57,12 +57,24 @@ export async function GET(request: Request) {
     const customerName = searchParams.get("customerName") ?? undefined;
     const pdfBytes = await createPDF(images, adjustments, customerName);
 
+    // Default to inline so an in-app-browser webview (LINE, etc.) that can
+    // render a PDF at all shows it directly instead of trying (and often
+    // failing) to hand a download off elsewhere. A real mobile browser tab
+    // opts into `?download=1` instead (see handleGeneratePDF in
+    // customize/page.tsx) — forwarding *that page* later is unreliable
+    // (the browser's own inline PDF viewer can hand off a blob: reference
+    // when the user shares/copies from within it, which is exactly the
+    // "not found" / WebKitBlobResource error this route used to cause), so
+    // a real download onto the device — then shared as an actual file
+    // through LINE — sidesteps that class of bug entirely.
+    const disposition = searchParams.get("download")
+      ? "attachment"
+      : "inline";
+
     return new Response(pdfBytes as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
-        // Inline (not attachment) so browsers/webviews that can render a
-        // PDF show it directly instead of trying to hand it off elsewhere.
-        "Content-Disposition": 'inline; filename="keychain-order.pdf"',
+        "Content-Disposition": `${disposition}; filename="keychain-order.pdf"`,
       },
     });
   } catch (error) {

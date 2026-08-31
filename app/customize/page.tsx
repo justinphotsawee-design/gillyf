@@ -161,8 +161,14 @@ export default function Customize() {
   // Builds the same query string the GET /api/generate-pdf route reads,
   // so navigating straight to that URL renders without ever creating a
   // blob: URL — see handleGeneratePDF for why that matters on mobile.
-  function buildPdfUrl(): string {
-    return `/api/generate-pdf?${buildOrderParams().toString()}`;
+  // `forceDownload` adds `?download=1`, which the route reads to send
+  // `Content-Disposition: attachment` instead of `inline` — see
+  // handleGeneratePDF's isMobile branch for why a real browser tab wants
+  // that (an in-app-browser webview does not, so it's opt-in).
+  function buildPdfUrl(forceDownload = false): string {
+    const params = buildOrderParams();
+    if (forceDownload) params.set("download", "1");
+    return `/api/generate-pdf?${params.toString()}`;
   }
 
   // A plain HTML page (no PDF, no blob: URL) showing the finished design —
@@ -240,8 +246,18 @@ export default function Customize() {
         // fails silently — the tab stays blank. Point it at the plain
         // GET URL instead: a normal https:// navigation, no blob
         // involved, so it works the same regardless of process.
+        //
+        // forceDownload=true here (unlike the in-app-browser branch
+        // above) so the browser saves an actual PDF file instead of
+        // showing it in its own inline viewer — forwarding *that* later
+        // (tapping share/copy from inside the viewer) is what produced
+        // the "not found" / WebKitBlobResource errors customers hit,
+        // since some inline PDF viewers hand off a blob: reference of
+        // their own instead of the page's real URL. A downloaded file has
+        // no such ambiguity: it can be shared as a real attachment
+        // straight from LINE, which always works for the recipient.
         const shopSent = await notifyShop();
-        const pdfUrl = buildPdfUrl();
+        const pdfUrl = buildPdfUrl(true);
         if (pendingTab) {
           pendingTab.location.href = pdfUrl;
         } else {
@@ -251,8 +267,8 @@ export default function Customize() {
         }
         setStatusMessage(
           shopSent
-            ? "Your PDF is ready and your order has been sent!"
-            : "Your PDF is ready, but we couldn't send your order automatically — please contact us to confirm it went through."
+            ? "Your PDF has downloaded and your order has been sent! You can also share the link below."
+            : "Your PDF has downloaded, but we couldn't send your order automatically — please contact us to confirm it went through."
         );
         return;
       }
