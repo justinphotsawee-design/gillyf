@@ -12,6 +12,7 @@ describe("Welcome (\"/\")", () => {
   beforeEach(() => {
     pushMock.mockReset();
     window.sessionStorage.clear();
+    window.localStorage.clear();
   });
 
   it("shows a validation error and does not navigate when the name is empty", () => {
@@ -38,6 +39,17 @@ describe("Welcome (\"/\")", () => {
     expect(JSON.parse(window.sessionStorage.getItem("gilly:customer")!)).toEqual({
       name: "ต้นข้าว",
     });
+  });
+
+  it("clears any design left over from a previous customer on this device", () => {
+    window.localStorage.setItem(
+      "gilly:design",
+      JSON.stringify({ uploadedUrls: { coverFront: "x" }, adjustments: {} })
+    );
+    render(<Welcome />);
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Alex" } });
+    fireEvent.click(screen.getByRole("button", { name: /start customizing/i }));
+    expect(window.localStorage.getItem("gilly:design")).toBeNull();
   });
 
   it("submits via Enter in the name field, same as clicking the button", () => {

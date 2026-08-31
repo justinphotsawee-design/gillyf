@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveCustomerInfo } from "./lib/customer";
+import { clearDesignProgress } from "./lib/design";
 
 export default function Welcome() {
   const router = useRouter();
@@ -20,6 +21,12 @@ export default function Welcome() {
     }
 
     setError("");
+    // Starting a fresh order — clear any design left in localStorage from
+    // a previous customer on this device (see design.ts for why it's
+    // localStorage, not sessionStorage, and why that makes this call
+    // necessary). A customer resuming their own in-progress order instead
+    // hits the browser's back button, which never reaches this handler.
+    clearDesignProgress();
     saveCustomerInfo({ name: trimmedName });
     router.push("/customize");
   }
