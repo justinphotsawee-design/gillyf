@@ -22,6 +22,42 @@ const slots = [
   // TemplatePreview's rightFixedUrl / pdf.ts's packagingRightImage.
 ];
 
+// Same query shape buildOrderParams()/the GET /api/generate-pdf route
+// use — parsed back out client-side so a customer returning to this exact
+// URL (see handleGeneratePDF's use of history.replaceState) recovers
+// their design straight from the address bar. This is the recovery path
+// that actually survives an in-app browser's same-tab navigation to the
+// PDF and back: unlike localStorage/sessionStorage, which some in-app
+// webviews (LINE, etc.) inconsistently reset when they tear down and
+// recreate their browsing context on navigation — the exact
+// "saves on some devices, not others" symptom this was built to fix —
+// the URL itself is part of the browser's own history/navigation
+// mechanism, not a storage API, so nothing app-specific can wipe it.
+function parseDesignFromSearch(
+  search: string
+): { uploadedUrls: Record<string, string>; adjustments: Record<string, Adjustment> } | null {
+  const params = new URLSearchParams(search);
+  const uploadedUrls: Record<string, string> = {};
+  const adjustments: Record<string, Adjustment> = {};
+  for (const { id } of slots) {
+    const url = params.get(id);
+    if (url) uploadedUrls[id] = url;
+
+    const scaleRaw = params.get(`${id}_scale`);
+    const xRaw = params.get(`${id}_x`);
+    const yRaw = params.get(`${id}_y`);
+    if (scaleRaw !== null && xRaw !== null && yRaw !== null) {
+      const scale = Number(scaleRaw);
+      const x = Number(xRaw);
+      const y = Number(yRaw);
+      if (Number.isFinite(scale) && Number.isFinite(x) && Number.isFinite(y)) {
+        adjustments[id] = { scale, x, y };
+      }
+    }
+  }
+  return Object.keys(uploadedUrls).length > 0 ? { uploadedUrls, adjustments } : null;
+}
+
 export default function Customize() {
   const router = useRouter();
   // sessionStorage doesn't exist during SSR, so this has to start as null
@@ -67,15 +103,28 @@ export default function Customize() {
       router.replace("/");
       return;
     }
-    // Restore any photos/positions from a previous visit in this same
-    // session — e.g. the customer navigated away to view/download the
-    // generated PDF and hit the browser's back button to return here.
-    // Without this, that state (which only ever lived in this component's
-    // React state) is just gone, and they'd have to re-upload everything.
-    const saved = loadDesignProgress();
-    if (saved) {
-      setUploadedUrls(saved.uploadedUrls);
-      setAdjustments(saved.adjustments);
+    // Restore any photos/positions from a previous visit — e.g. the
+    // customer navigated away to view/download the generated PDF and hit
+    // the browser's back button to return here. Without this, that state
+    // (which only ever lived in this component's React state) is just
+    // gone, and they'd have to re-upload everything.
+    //
+    // Try the URL first (see parseDesignFromSearch/handleGeneratePDF —
+    // it's the reliable path), then fall back to localStorage for a
+    // plain refresh, which never touches the URL at all.
+    const fromUrl = parseDesignFromSearch(window.location.search);
+    if (fromUrl) {
+      setUploadedUrls(fromUrl.uploadedUrls);
+      setAdjustments(fromUrl.adjustments);
+      // Clean the (potentially long) query string back off once it's
+      // been read, so it doesn't linger in the address bar/history.
+      window.history.replaceState(null, "", "/customize");
+    } else {
+      const saved = loadDesignProgress();
+      if (saved) {
+        setUploadedUrls(saved.uploadedUrls);
+        setAdjustments(saved.adjustments);
+      }
     }
     hydratedRef.current = true;
     // Deliberately run once on mount only — this is a one-time "check
@@ -204,6 +253,19 @@ export default function Customize() {
     return `/api/generate-pdf?${params.toString()}`;
   }
 
+  // Bakes the current design into /customize's own URL right before a
+  // same-tab navigation away from it (see the two call sites in
+  // handleGeneratePDF below). The browser's back button always returns to
+  // the exact URL a history entry held — including its query string —
+  // regardless of what happens to that page's storage in between. So a
+  // customer who taps back after this lands back on
+  // /customize?coverFront=...&... , and parseDesignFromSearch/the mount
+  // effect above restores straight from that, without depending on
+  // localStorage/sessionStorage surviving the trip.
+  function preserveUrlBeforeNavigatingAway(): void {
+    window.history.replaceState(null, "", `/customize?${buildOrderParams().toString()}`);
+  }
+
   // A plain HTML page (no PDF, no blob: URL) showing the finished design —
   // meant to be shared as-is (e.g. pasted into LINE) so the shop can just
   // open it, instead of trying to forward the PDF itself, which breaks
@@ -252,6 +314,7 @@ export default function Customize() {
           "We couldn't send your order automatically — please contact us to confirm it went through."
         );
       }
+      preserveUrlBeforeNavigatingAway();
       window.location.href = buildPdfUrl();
       return;
     }
@@ -296,6 +359,7 @@ export default function Customize() {
         } else {
           // The synchronous window.open() above got blocked anyway —
           // fall back to a same-tab navigation, which isn't blocked.
+          preserveUrlBeforeNavigatingAway();
           window.location.href = pdfUrl;
         }
         setStatusMessage(

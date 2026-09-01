@@ -34,6 +34,8 @@ describe("Customize (\"/customize\") — session gate", () => {
   beforeEach(() => {
     replaceMock.mockReset();
     loadCustomerInfoMock.mockReset();
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/customize");
   });
 
   it("redirects to \"/\" and renders nothing when no customer info is in sessionStorage", () => {
@@ -65,5 +67,34 @@ describe("Customize (\"/customize\") — session gate", () => {
     render(<Customize />);
     const btn = screen.getByRole("button", { name: /generate pdf/i });
     expect(btn).not.toBeDisabled();
+  });
+
+  it("restores an uploaded photo baked into the URL's own query string, and cleans the URL up after", () => {
+    // Mirrors what preserveUrlBeforeNavigatingAway() bakes into the URL
+    // right before handleGeneratePDF navigates away — this is the
+    // recovery path a customer's browser "back" button lands on.
+    window.history.replaceState(
+      null,
+      "",
+      "/customize?coverFront=https%3A%2F%2Fres.cloudinary.com%2Fdemo%2Fimage%2Fupload%2Fa.jpg" +
+        "&coverFront_scale=1&coverFront_x=0.5&coverFront_y=0.5"
+    );
+    loadCustomerInfoMock.mockReturnValue({ name: "Alex" });
+    render(<Customize />);
+    expect(screen.getByText(/1 of 6 sections added/i)).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  });
+
+  it("falls back to localStorage when the URL carries no design (e.g. a plain refresh)", () => {
+    window.localStorage.setItem(
+      "gilly:design",
+      JSON.stringify({
+        uploadedUrls: { coverFront: "https://res.cloudinary.com/demo/image/upload/a.jpg" },
+        adjustments: {},
+      })
+    );
+    loadCustomerInfoMock.mockReturnValue({ name: "Alex" });
+    render(<Customize />);
+    expect(screen.getByText(/1 of 6 sections added/i)).toBeInTheDocument();
   });
 });
