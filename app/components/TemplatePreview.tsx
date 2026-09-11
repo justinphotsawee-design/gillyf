@@ -1,32 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  DEFAULT_ADJUSTMENT,
+  MIN_SCALE,
+  MAX_SCALE,
+  type Adjustment,
+} from "../lib/adjustment";
+import { useImageAdjust } from "./useImageAdjust";
 
-// Mirrors app/lib/pdf.ts's Adjustment — duplicated instead of imported so
-// this client component doesn't pull pdf-lib (server-only) into the
-// browser bundle.
-export interface Adjustment {
-  scale: number;
-  x: number;
-  y: number;
-}
-
-export const DEFAULT_ADJUSTMENT: Adjustment = { scale: 1, x: 0.5, y: 0.5 };
-// scale is relative to the minimum "cover" size (1 = exactly fills the
-// slot, matching the old fixed behavior). Below 1 shrinks the photo
-// smaller than the slot, leaving the slot's background showing around it.
-export const MIN_SCALE = 0.3;
-export const MAX_SCALE = 3;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
+// Re-exported for existing `from "./TemplatePreview"` imports (this file
+// used to define these itself) — the real definitions live in
+// app/lib/adjustment.ts, shared with useImageAdjust.ts. Also mirrors
+// app/lib/pdf.ts's Adjustment, duplicated there instead of imported so
+// that server-only module doesn't pull pdf-lib into this client
+// component's browser bundle.
+export { DEFAULT_ADJUSTMENT, MIN_SCALE, MAX_SCALE, type Adjustment };
 
 // Mirrors the real-world cm dimensions in app/lib/pdf.ts (SLOTS / GAP_CM)
 // so this preview lines up with what actually prints.
-// Exported so OrderPreview.tsx (the read-only page rendered at the
-// shareable /order link) lays out the exact same rows/keys/dimensions
-// instead of a second copy that could drift out of sync.
 export const ROWS: {
   title: string;
   leftLabel: string;
@@ -173,30 +165,20 @@ function Slot({
   onAddClick: () => void;
   onRemove: () => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{
-    pointerId: number;
-    startClientX: number;
-    startClientY: number;
-    // Updated on every move — unlike startClientX/Y, which stays pinned
-    // to the down-position for the whole drag. Needed so that if a
-    // second finger lands mid-drag (starting a pinch), the pinch can
-    // seed itself from where the first finger actually is *now* rather
-    // than where it was when it first touched down.
-    lastClientX: number;
-    lastClientY: number;
-    startAdjustment: Adjustment;
-    // Pan range in each axis at drag-start (container size minus the
-    // drawn image size at that zoom level) — captured once so a fast
-    // drag stays consistent even as onAdjustChange re-renders mid-drag.
-    panRangeX: number;
-    panRangeY: number;
-  } | null>(null);
-  const pinchRef = useRef<{
-    pointers: Map<number, { x: number; y: number }>;
-    startDist: number;
-    startScale: number;
-  } | null>(null);
+  const adj = adjustment ?? DEFAULT_ADJUSTMENT;
+
+  // Reset the delete overlay (but deliberately *not* any image geometry —
+  // see useImageAdjust's naturalSize comment) when a new photo replaces
+  // this slot's old one — done during render (React's documented pattern
+  // for "adjust state when a prop changes"), not in an effect, so there's
+  // no extra render still showing the old delete-overlay state.
+  const [lastUrl, setLastUrl] = useState(url);
+  const [showDelete, setShowDelete] = useState(false);
+  if (url !== lastUrl) {
+    setLastUrl(url);
+    setShowDelete(false);
+  }
+
   // A tap opens the delete overlay with its "Remove photo" button centered
   // right under the finger/cursor — the second tap of a double-click (meant
   // to hit the double-click-to-reset gesture below) then lands squarely on
@@ -204,31 +186,6 @@ function Slot({
   // same-spot second tap arrive in time to cancel it, so a real double-click
   // resets zoom like it's supposed to instead of deleting the photo.
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const adj = adjustment ?? DEFAULT_ADJUSTMENT;
-
-  // object-position + transform:scale (the first version of this) turned
-  // out not to work: object-position's pannable range is fixed by the
-  // image/container aspect-ratio mismatch alone, computed *before* the
-  // transform — zooming in doesn't add any range in whichever axis
-  // already matched the container exactly at scale 1, so that axis
-  // stayed stuck no matter how far in you zoomed. Sizing/positioning the
-  // <img> directly in pixels (same formula as drawImageCover in
-  // app/lib/pdf.ts) makes zoom actually expand both axes' pan range.
-  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
-
-  // Reset the cached natural size when a new photo replaces this slot's
-  // old one — done during render (React's documented pattern for
-  // "adjust state when a prop changes"), not in an effect, so there's no
-  // extra render still showing the old image's now-wrong dimensions.
-  const [lastUrl, setLastUrl] = useState(url);
-  const [showDelete, setShowDelete] = useState(false);
-  if (url !== lastUrl) {
-    setLastUrl(url);
-    setNaturalSize(null);
-    setShowDelete(false);
-  }
 
   // Refs can't be touched during render (see the state resets above,
   // which use React's blessed "adjust state when a prop changes"
@@ -240,219 +197,43 @@ function Slot({
     };
   }, [url]);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setContainerSize({ w: width, h: height });
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [url]);
-
-  function drawSize(userScale: number) {
-    if (!naturalSize || !containerSize.w || !containerSize.h) return null;
-    const coverScale = Math.max(
-      containerSize.w / naturalSize.w,
-      containerSize.h / naturalSize.h
-    );
-    const scale = coverScale * userScale;
-    return { width: naturalSize.w * scale, height: naturalSize.h * scale };
-  }
-
-  function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
-    return Math.hypot(a.x - b.x, a.y - b.y);
-  }
-
-  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (!url) return;
-    // Best-effort: keeps move/up events coming to this element even if
-    // the finger/cursor drifts outside it mid-drag. It can throw (e.g. a
-    // pointer that's already gone up by the time this runs) — that's not
-    // fatal, so don't let it stop the rest of the gesture from starting.
-    try {
-      (e.target as Element).setPointerCapture?.(e.pointerId);
-    } catch {
-      // Ignored — see above.
-    }
-
-    if (pinchRef.current) {
-      pinchRef.current.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const pts = Array.from(pinchRef.current.pointers.values());
-      if (pts.length === 2) {
-        pinchRef.current.startDist = distance(pts[0], pts[1]);
-        pinchRef.current.startScale = adj.scale;
-      }
-      dragRef.current = null;
-      return;
-    }
-
-    if (dragRef.current && dragRef.current.pointerId !== e.pointerId) {
-      // A second, different finger came down mid-drag — switch to
-      // pinch-zoom. Seed the first finger's point from its *current*
-      // (last-moved-to) position, not its original down-position — the
-      // two touches essentially never land in the same instant, so by
-      // the time the second finger arrives the first one has usually
-      // already drifted. Using the stale down-position here skews
-      // startDist away from the real initial finger separation, which
-      // then either overshoots or undershoots every ratio computed
-      // afterwards — the zoom gesture reads as unresponsive or
-      // stuck, especially when it makes startDist too large to ever
-      // exceed while spreading fingers apart (i.e. "can't zoom in").
-      pinchRef.current = {
-        pointers: new Map([
-          [dragRef.current.pointerId, { x: dragRef.current.lastClientX, y: dragRef.current.lastClientY }],
-          [e.pointerId, { x: e.clientX, y: e.clientY }],
-        ]),
-        startDist: 0,
-        startScale: adj.scale,
-      };
-      const pts = Array.from(pinchRef.current.pointers.values());
-      pinchRef.current.startDist = distance(pts[0], pts[1]);
-      dragRef.current = null;
-      return;
-    }
-
-    const size = drawSize(adj.scale);
-    dragRef.current = {
-      pointerId: e.pointerId,
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      lastClientX: e.clientX,
-      lastClientY: e.clientY,
-      startAdjustment: adj,
-      panRangeX: size ? containerSize.w - size.width : 0,
-      panRangeY: size ? containerSize.h - size.height : 0,
-    };
-  }
-
-  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (pinchRef.current?.pointers.has(e.pointerId)) {
-      pinchRef.current.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const pts = Array.from(pinchRef.current.pointers.values());
-      if (pts.length === 2 && pinchRef.current.startDist > 0) {
-        const ratio = distance(pts[0], pts[1]) / pinchRef.current.startDist;
-        onAdjustChange({
-          ...adj,
-          scale: clamp(pinchRef.current.startScale * ratio, MIN_SCALE, MAX_SCALE),
-        });
-      }
-      return;
-    }
-
-    if (!dragRef.current || dragRef.current.pointerId !== e.pointerId) return;
-    dragRef.current.lastClientX = e.clientX;
-    dragRef.current.lastClientY = e.clientY;
-    const deltaX = e.clientX - dragRef.current.startClientX;
-    const deltaY = e.clientY - dragRef.current.startClientY;
-    const { startAdjustment, panRangeX, panRangeY } = dragRef.current;
-    // panRangeX/Y (container size minus the drawn image size, at the
-    // zoom level when the drag started) is negative once the image
-    // overflows the box — dividing by it is what flips "drag right" into
-    // "focal point moves left", i.e. the image visually follows the
-    // finger/cursor. It's 0 only if the image exactly fits (no zoom, no
-    // slack), in which case there's nothing to pan in that axis anyway.
-    onAdjustChange({
-      ...startAdjustment,
-      x: panRangeX ? clamp(startAdjustment.x + deltaX / panRangeX, 0, 1) : startAdjustment.x,
-      y: panRangeY ? clamp(startAdjustment.y + deltaY / panRangeY, 0, 1) : startAdjustment.y,
-    });
-  }
-
-  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    if (pinchRef.current?.pointers.has(e.pointerId)) {
-      pinchRef.current.pointers.delete(e.pointerId);
-      if (pinchRef.current.pointers.size < 2) {
-        // One finger lifted mid-pinch. Resume as a plain drag with
-        // whichever finger is still down instead of going dead — without
-        // this, the still-down finger's moves are silently dropped
-        // (neither ref claims that pointerId anymore) until it also
-        // lifts, which reads as "zoom just stopped working".
-        const remaining = Array.from(pinchRef.current.pointers.entries())[0];
-        pinchRef.current = null;
-        if (remaining) {
-          const [remainingId, pos] = remaining;
-          const size = drawSize(adj.scale);
-          dragRef.current = {
-            pointerId: remainingId,
-            startClientX: pos.x,
-            startClientY: pos.y,
-            lastClientX: pos.x,
-            lastClientY: pos.y,
-            startAdjustment: adj,
-            panRangeX: size ? containerSize.w - size.width : 0,
-            panRangeY: size ? containerSize.h - size.height : 0,
-          };
-        }
-      }
-      return;
-    }
-    if (dragRef.current?.pointerId === e.pointerId) {
-      // A pointer down/up with (almost) no movement in between is a tap
-      // rather than a drag — toggle the delete button instead of treating
-      // it as a pan gesture. Also fires for a tap on the dark backdrop
-      // itself, which is how the overlay dismisses without deleting.
-      const moved = Math.hypot(
-        e.clientX - dragRef.current.startClientX,
-        e.clientY - dragRef.current.startClientY
-      );
-      dragRef.current = null;
-      if (moved < 6) {
-        if (showDelete) {
-          // Dismissing: nothing new is about to appear under the
-          // pointer, so there's no race to guard against here.
-          setShowDelete(false);
-        } else if (tapTimerRef.current) {
-          // This is the second tap of a double-click arriving before the
-          // first tap's deferred open below fired — treat the pair as
-          // the double-click-to-reset gesture (see onDoubleClick), not
-          // two single taps.
-          clearTimeout(tapTimerRef.current);
-          tapTimerRef.current = null;
-        } else {
-          // Defer opening the delete overlay: if a second same-spot tap
-          // (i.e. a double-click) arrives within the window above, it
-          // cancels this instead of landing on the "Remove photo" button
-          // that would otherwise have just appeared under the cursor.
-          tapTimerRef.current = setTimeout(() => {
-            tapTimerRef.current = null;
-            setShowDelete(true);
-          }, 300);
-        }
-      }
+  function handleTap() {
+    // A tap on the dark backdrop itself is how the overlay dismisses
+    // without deleting.
+    if (showDelete) {
+      // Dismissing: nothing new is about to appear under the pointer, so
+      // there's no race to guard against here.
+      setShowDelete(false);
+    } else if (tapTimerRef.current) {
+      // This is the second tap of a double-click arriving before the
+      // first tap's deferred open below fired — treat the pair as the
+      // double-click-to-reset gesture (see onDoubleClick), not two single
+      // taps.
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+    } else {
+      // Defer opening the delete overlay: if a second same-spot tap
+      // (i.e. a double-click) arrives within the window above, it
+      // cancels this instead of landing on the "Remove photo" button
+      // that would otherwise have just appeared under the cursor.
+      tapTimerRef.current = setTimeout(() => {
+        tapTimerRef.current = null;
+        setShowDelete(true);
+      }, 300);
     }
   }
 
-  // React's onWheel is passive by default, so e.preventDefault() inside
-  // it is a no-op (and logs a warning) — a native listener is the only
-  // way to actually stop the page from scrolling while zooming here.
-  // latestRef sidesteps re-attaching the listener on every drag update;
-  // it's kept fresh via its own effect since writing to a ref during
-  // render itself isn't allowed.
-  const latestRef = useRef({ url, adj, onAdjustChange });
-  useEffect(() => {
-    latestRef.current = { url, adj, onAdjustChange };
-  });
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    function onWheel(e: WheelEvent) {
-      const { url, adj, onAdjustChange } = latestRef.current;
-      if (!url) return;
-      e.preventDefault();
-      onAdjustChange({
-        ...adj,
-        scale: clamp(adj.scale - e.deltaY * 0.0015, MIN_SCALE, MAX_SCALE),
-      });
-    }
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-    // Re-run when a slot flips from empty (<button>, no ref) to filled
-    // (<div ref=containerRef>, …) so the listener actually gets attached
-    // once there's something to attach it to.
-  }, [url]);
+  const {
+    containerRef,
+    imgRef,
+    imgStyle,
+    onImgLoad,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onDoubleClick,
+  } = useImageAdjust({ url, adjustment: adj, onAdjustChange, onTap: handleTap });
 
   if (!url) {
     return (
@@ -483,41 +264,21 @@ function Slot({
       ref={containerRef}
       className="group relative border border-dashed border-brand/30 bg-brand/5 flex items-center justify-center overflow-hidden touch-none select-none cursor-move"
       style={{ width: `${widthPercent}%` }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onDoubleClick={() => onAdjustChange(DEFAULT_ADJUSTMENT)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onDoubleClick={onDoubleClick}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
+        ref={imgRef}
         src={url}
         alt=""
         draggable={false}
-        onLoad={(e) => {
-          const img = e.currentTarget;
-          setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-        }}
+        onLoad={onImgLoad}
         className="absolute pointer-events-none max-w-none"
-        style={(() => {
-          const size = drawSize(adj.scale);
-          // Tailwind's preflight resets img to max-width:100% / height:auto,
-          // which silently caps the explicit width/height below — without
-          // overriding both here, a zoomed-in image (wider/taller than the
-          // slot) gets squeezed back down, and the left/top math (worked
-          // out for the *intended* size) ends up pointing at empty space.
-          const base = { maxWidth: "none", maxHeight: "none" };
-          // Before the image has loaded and the container's been
-          // measured, fall back to a plain full-fill so nothing looks
-          // broken for that first instant — this gets replaced by the
-          // precise pixel placement below as soon as both are known.
-          if (!size) {
-            return { ...base, inset: 0, width: "100%", height: "100%", objectFit: "cover" as const };
-          }
-          const left = (containerSize.w - size.width) * adj.x;
-          const top = (containerSize.h - size.height) * adj.y;
-          return { ...base, left, top, width: size.width, height: size.height };
-        })()}
+        style={imgStyle}
       />
 
       {uploading && (
@@ -679,7 +440,13 @@ function Row({
   );
 }
 
-export default function TemplatePreview({
+// The actual editable grid — every row of Slot/FixedSlot pairs, with no
+// card/header/logo wrapper of its own. Exported (not just used by the
+// default export below) so order/OrderClient.tsx can drop it straight
+// into /order's own header/card instead of nesting TemplatePreview's card
+// inside that page's, or maintaining a second, near-identical grid
+// component that could drift out of sync with this one.
+export function SlotGrid({
   uploadedUrls,
   uploadingSlots,
   adjustments,
@@ -694,6 +461,33 @@ export default function TemplatePreview({
   onSlotClick: (slotKey: string) => void;
   onRemove: (slotKey: string) => void;
 }) {
+  return (
+    <div className="space-y-6">
+      {ROWS.map((row) => (
+        <Row
+          key={row.title}
+          row={row}
+          leftUrl={uploadedUrls[row.leftKey]}
+          rightUrl={uploadedUrls[row.rightKey]}
+          gapUrl={row.gapKey ? uploadedUrls[row.gapKey] : undefined}
+          leftUploading={uploadingSlots[row.leftKey]}
+          rightUploading={uploadingSlots[row.rightKey]}
+          gapUploading={row.gapKey ? uploadingSlots[row.gapKey] : undefined}
+          leftAdjustment={adjustments[row.leftKey]}
+          rightAdjustment={adjustments[row.rightKey]}
+          gapAdjustment={row.gapKey ? adjustments[row.gapKey] : undefined}
+          onAdjustChange={onAdjustChange}
+          onSlotClick={onSlotClick}
+          onRemove={onRemove}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function TemplatePreview(
+  props: Parameters<typeof SlotGrid>[0]
+) {
   return (
     <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-10 max-w-2xl mx-auto">
       <div className="flex items-center gap-2 mb-6">
@@ -714,26 +508,7 @@ export default function TemplatePreview({
         reposition and scroll/pinch to zoom.
       </p>
 
-      <div className="space-y-6">
-        {ROWS.map((row) => (
-          <Row
-            key={row.title}
-            row={row}
-            leftUrl={uploadedUrls[row.leftKey]}
-            rightUrl={uploadedUrls[row.rightKey]}
-            gapUrl={row.gapKey ? uploadedUrls[row.gapKey] : undefined}
-            leftUploading={uploadingSlots[row.leftKey]}
-            rightUploading={uploadingSlots[row.rightKey]}
-            gapUploading={row.gapKey ? uploadingSlots[row.gapKey] : undefined}
-            leftAdjustment={adjustments[row.leftKey]}
-            rightAdjustment={adjustments[row.rightKey]}
-            gapAdjustment={row.gapKey ? adjustments[row.gapKey] : undefined}
-            onAdjustChange={onAdjustChange}
-            onSlotClick={onSlotClick}
-            onRemove={onRemove}
-          />
-        ))}
-      </div>
+      <SlotGrid {...props} />
     </div>
   );
 }

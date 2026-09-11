@@ -10,6 +10,7 @@ import { uploadImage } from "../lib/upload";
 import { loadCustomerInfo, type CustomerInfo } from "../lib/customer";
 import { loadDesignProgress, saveDesignProgress } from "../lib/design";
 import { isInAppBrowser, isMobileBrowser } from "../lib/browser";
+import { buildOrderParams as buildOrderParamsFromState } from "../lib/orderParams";
 
 const slots = [
   { id: "coverFront", label: "Cover Front" },
@@ -227,17 +228,7 @@ export default function Customize() {
   // same query shape (see /api/generate-pdf's GET handler and
   // app/order/page.tsx), just rendering it differently.
   function buildOrderParams(): URLSearchParams {
-    const params = new URLSearchParams();
-    for (const [slotId, url] of Object.entries(uploadedUrls)) {
-      if (!url) continue;
-      params.set(slotId, url);
-      const adj = adjustments[slotId] ?? DEFAULT_ADJUSTMENT;
-      params.set(`${slotId}_scale`, String(adj.scale));
-      params.set(`${slotId}_x`, String(adj.x));
-      params.set(`${slotId}_y`, String(adj.y));
-    }
-    if (customer?.name) params.set("customerName", customer.name);
-    return params;
+    return buildOrderParamsFromState(uploadedUrls, adjustments, customer?.name);
   }
 
   // Builds the same query string the GET /api/generate-pdf route reads,

@@ -1,5 +1,5 @@
 import { SLOT_IDS, DEFAULT_ADJUSTMENT, type Adjustment, type SlotId } from "@/app/lib/pdf";
-import OrderPreview from "@/app/components/OrderPreview";
+import OrderClient from "./OrderClient";
 
 // The shareable link a customer sends into LINE once they're done. It's a
 // plain server-rendered https:// page (same origin/domain as the rest of
@@ -42,15 +42,6 @@ export default async function OrderPage({
   const customerName = firstValue(params.customerName);
   const hasAnyPhoto = Object.keys(images).length > 0;
 
-  // Re-derive the /api/generate-pdf query string from the same params
-  // this page received, rather than hardcoding it, so it can't drift out
-  // of sync with what that route actually reads.
-  const pdfQuery = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    const v = firstValue(value);
-    if (v !== undefined) pdfQuery.set(key, v);
-  }
-
   return (
     <main className="min-h-dvh bg-background px-6 py-12">
       <div className="max-w-2xl mx-auto">
@@ -73,30 +64,22 @@ export default async function OrderPage({
             customer to share the link again from their finished design.
           </div>
         ) : (
-          <>
-            <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-6">
-              {customerName && (
-                <p className="text-sm text-foreground/60 mb-6">
-                  Order for <span className="font-medium text-foreground">{customerName}</span>
-                </p>
-              )}
-              <OrderPreview
-                images={images as Record<string, string>}
-                adjustments={
-                  Object.fromEntries(
-                    SLOT_IDS.map((id) => [id, adjustments[id] ?? DEFAULT_ADJUSTMENT])
-                  ) as Record<string, Adjustment>
-                }
-              />
-            </div>
-
-            <a
-              href={`/api/generate-pdf?${pdfQuery.toString()}`}
-              className="inline-block bg-brand hover:bg-brand-dark text-white px-6 py-3 rounded-xl font-medium transition shadow-lg shadow-brand/20 hover:shadow-brand/30"
-            >
-              Open print-ready PDF
-            </a>
-          </>
+          <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-6">
+            {customerName && (
+              <p className="text-sm text-foreground/60 mb-6">
+                Order for <span className="font-medium text-foreground">{customerName}</span>
+              </p>
+            )}
+            <OrderClient
+              images={images as Record<string, string>}
+              initialAdjustments={
+                Object.fromEntries(
+                  SLOT_IDS.map((id) => [id, adjustments[id] ?? DEFAULT_ADJUSTMENT])
+                ) as Record<string, Adjustment>
+              }
+              customerName={customerName}
+            />
+          </div>
         )}
       </div>
     </main>
