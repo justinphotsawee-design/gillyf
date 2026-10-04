@@ -23,7 +23,7 @@ const dancingScript = Dancing_Script({
 });
 
 export const metadata: Metadata = {
-  title: "Gilly Gift & Craft",
+  title: "Gilly Studio",
   description: "Customize your NFC CD keychain",
 };
 

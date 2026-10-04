@@ -204,7 +204,7 @@ describe("TemplatePreview — drag to pan", () => {
 describe("TemplatePreview — Packaging's fixed artwork slot", () => {
   it("renders the fixed packaging image with no add/remove/replace controls", () => {
     renderEmpty();
-    const fixedImg = document.querySelector('img[src="/pic/packaging-right.png"]');
+    const fixedImg = document.querySelector('img[src="/pic/packaging-right_new.png"]');
     expect(fixedImg).toBeTruthy();
     // FixedSlot renders no buttons of its own — every button on the page
     // must belong to one of the real upload slots instead.

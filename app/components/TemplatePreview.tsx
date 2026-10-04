@@ -21,6 +21,8 @@ export { DEFAULT_ADJUSTMENT, MIN_SCALE, MAX_SCALE, type Adjustment };
 // so this preview lines up with what actually prints.
 export const ROWS: {
   title: string;
+  // Hides the vertical row title beside the slots (still used as the key).
+  hideTitle?: boolean;
   leftLabel: string;
   rightLabel: string;
   leftKey: string;
@@ -39,8 +41,9 @@ export const ROWS: {
 }[] = [
   {
     title: "Back",
-    leftLabel: "Front",
-    rightLabel: "Back",
+    hideTitle: true,
+    leftLabel: "Back",
+    rightLabel: "Inner right",
     leftKey: "coverFront",
     rightKey: "coverBack",
     leftWidthCm: 5,
@@ -54,8 +57,9 @@ export const ROWS: {
   },
   {
     title: "Cover",
-    leftLabel: "Outer",
-    rightLabel: "Inner",
+    hideTitle: true,
+    leftLabel: "Front",
+    rightLabel: "Inner left",
     leftKey: "backOuter",
     rightKey: "backInner",
     leftWidthCm: 4.1,
@@ -66,7 +70,7 @@ export const ROWS: {
   },
   {
     title: "Packaging",
-    leftLabel: "Text",
+    leftLabel: "",
     rightLabel: "Image",
     leftKey: "packagingLeft",
     rightKey: "packagingRight",
@@ -75,7 +79,7 @@ export const ROWS: {
     heightCm: 10.2,
     gapCm: 1.5,
     showGap: false,
-    rightFixedUrl: "/pic/packaging-right.png",
+    rightFixedUrl: "/pic/packaging-right_new.png",
   },
 ];
 
@@ -252,9 +256,11 @@ function Slot({
         >
           {uploading ? "Uploading…" : "Add photo"}
         </span>
-        <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-brand-dark/40">
-          {label}
-        </span>
+        {label && (
+          <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-brand-dark/40">
+            {label}
+          </span>
+        )}
       </button>
     );
   }
@@ -299,7 +305,7 @@ function Slot({
 
       {!uploading && !showDelete && <ReplaceButton onClick={onAddClick} />}
 
-      {!showDelete && (
+      {!showDelete && label && (
         <span className="absolute bottom-1.5 inset-x-0 text-center text-[0.6rem] tracking-widest uppercase text-white/90 drop-shadow-sm pointer-events-none">
           <span className="bg-black/35 rounded px-1.5 py-0.5">{label}</span>
         </span>
@@ -384,7 +390,7 @@ function Row({
         className="shrink-0 flex items-center justify-center text-[0.6rem] tracking-[0.3em] text-brand-dark/45 uppercase w-4"
         style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
       >
-        {row.title}
+        {!row.hideTitle && row.title}
       </div>
 
       <div className="flex items-stretch gap-2 w-full max-w-[480px]">
@@ -492,10 +498,10 @@ export default function TemplatePreview(
     <div className="bg-white rounded-3xl shadow-xl shadow-brand/5 p-6 sm:p-8 border border-brand/10 mb-10 max-w-2xl mx-auto">
       <div className="flex items-center gap-2 mb-6">
         <img
-          src="/pic/IMG_2488.png"
+          src="/pic/logo_new_white.png"
           alt="Gilly"
-          width={1280}
-          height={1280}
+          width={1765}
+          height={1089}
           className="h-10 w-auto object-contain"
         />
         <span className="text-[0.65rem] tracking-[0.3em] text-brand-dark/50 uppercase">

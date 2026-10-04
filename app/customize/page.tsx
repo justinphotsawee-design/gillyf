@@ -432,13 +432,13 @@ export default function Customize() {
       <header className="relative border-b border-brand/10 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="relative h-11 w-24 shrink-0">
-              <img
-                src="/pic/IMG_2488.png"
-                alt="Gilly Gift & Craft"
-                className="absolute left-0 top-1/2 -translate-y-1/2 h-24 w-48 object-cover object-center"
-              />
-            </div>
+            <img
+              src="/pic/logo_new_transparent.png"
+              alt="Gilly Studio"
+              width={1745}
+              height={1069}
+              className="h-16 w-auto shrink-0"
+            />
           </div>
           <p className="text-sm text-foreground/60">
             Hi, {customer.name}
@@ -531,7 +531,7 @@ export default function Customize() {
         </div>
 
         <p className="text-center text-xs text-brand-dark/40 mt-12 tracking-wide">
-          Gilly Gift &amp; Craft — handmade to order
+          Gilly Studio — handmade to order
         </p>
       </div>
     </main>

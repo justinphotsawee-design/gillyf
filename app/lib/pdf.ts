@@ -37,7 +37,7 @@ let logoBytesCache: Uint8Array | null = null;
 function loadLogoBytes(): Uint8Array {
   if (!logoBytesCache) {
     logoBytesCache = fs.readFileSync(
-      path.join(process.cwd(), "public/pic/IMG_2488.JPG")
+      path.join(process.cwd(), "public/pic/logo_new.JPG")
     );
   }
   return logoBytesCache;
@@ -50,7 +50,7 @@ let packagingRightBytesCache: Uint8Array | null = null;
 function loadPackagingRightBytes(): Uint8Array {
   if (!packagingRightBytesCache) {
     packagingRightBytesCache = fs.readFileSync(
-      path.join(process.cwd(), "public/pic/packaging-right.png")
+      path.join(process.cwd(), "public/pic/packaging-right_new.png")
     );
   }
   return packagingRightBytesCache;
@@ -269,15 +269,22 @@ export async function createPDF(
   const titleColWidth = 10;
   const colGap = 8;
 
+  // Every row starts at the same left edge: the widest row is centered
+  // on the page and the narrower ones line up flush-left under it.
+  const widestBoxesWidth = Math.max(
+    ...ROWS.map(
+      (r) =>
+        (r.leftWidthCm + (r.showGap ? r.gapCm : 0) + r.rightWidthCm) * CM
+    )
+  );
+  const rowStartX =
+    (pageWidth - (titleColWidth + colGap + widestBoxesWidth)) / 2;
+
   for (const row of ROWS) {
     const leftW = row.leftWidthCm * CM;
     const rightW = row.rightWidthCm * CM;
     const gapW = row.showGap ? row.gapCm * CM : 0;
     const rowHeight = row.heightCm * CM;
-    const boxesWidth = leftW + gapW + rightW;
-
-    const rowContentWidth = titleColWidth + colGap + boxesWidth;
-    const rowStartX = (pageWidth - rowContentWidth) / 2;
 
     const boxStartX = rowStartX + titleColWidth + colGap;
 
@@ -315,7 +322,9 @@ export async function createPDF(
         boxStartX + leftW,
         boxBottomY,
         gapW,
-        rowHeight
+        rowHeight,
+        // No dividing line between the gap strip and the right box.
+        { right: false }
       );
     }
 
@@ -330,13 +339,14 @@ export async function createPDF(
       boxStartX + leftW + gapW,
       boxBottomY,
       rightW,
-      rowHeight
+      rowHeight,
+      { left: !row.showGap }
     );
 
     cursorY = boxBottomY - rowGap;
   }
 
-  page.drawText("Gilly Gift & Craft — handmade to order", {
+  page.drawText("Gilly Studio — handmade to order", {
     x: contentX,
     y: margin + 14,
     size: 8,
@@ -363,38 +373,35 @@ function drawSlot(
   x: number,
   y: number,
   width: number,
-  height: number
+  height: number,
+  // Which sides get a dashed border (all by default) — lets two adjacent
+  // slots read as one continuous box with no divider between them.
+  sides: { left?: boolean; right?: boolean } = {}
 ) {
+  // A shrunk (scale < 1) photo doesn't fill the slot — paint the same
+  // soft fill an empty slot uses underneath so the gap doesn't show the
+  // bare page. No "+" on an empty slot (unlike the on-site editor) —
+  // that's an "add a photo" affordance, not print-ready artwork.
+  page.drawRectangle({ x, y, width, height, color: PLACEHOLDER_FILL });
   if (embedded) {
-    // A shrunk (scale < 1) photo doesn't fill the slot — paint the same
-    // soft fill an empty slot uses underneath so the gap doesn't show
-    // the bare page.
-    page.drawRectangle({ x, y, width, height, color: PLACEHOLDER_FILL });
     drawImageCover(page, embedded, adjustment ?? DEFAULT_ADJUSTMENT, x, y, width, height);
+  }
 
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      borderWidth: 1,
-      borderColor: DASH_BORDER,
-      borderDashArray: [3, 2],
-    });
-  } else {
-    // No "+" here (unlike the on-site editor's empty slot) — that's an
-    // "add a photo" affordance for the interactive page, not something
-    // that belongs on print-ready artwork. An empty slot just prints as
-    // a blank placeholder box.
-    page.drawRectangle({
-      x,
-      y,
-      width,
-      height,
-      color: PLACEHOLDER_FILL,
-      borderWidth: 1,
-      borderColor: DASH_BORDER,
-      borderDashArray: [3, 2],
+  const top = y + height;
+  const right = x + width;
+  const edges: [number, number, number, number][] = [
+    [x, top, right, top],
+    [x, y, right, y],
+  ];
+  if (sides.left !== false) edges.push([x, y, x, top]);
+  if (sides.right !== false) edges.push([right, y, right, top]);
+  for (const [x1, y1, x2, y2] of edges) {
+    page.drawLine({
+      start: { x: x1, y: y1 },
+      end: { x: x2, y: y2 },
+      thickness: 1,
+      color: DASH_BORDER,
+      dashArray: [3, 2],
     });
   }
 }

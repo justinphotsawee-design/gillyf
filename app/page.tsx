@@ -45,10 +45,10 @@ export default function Welcome() {
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-xl shadow-brand/5 p-8 sm:p-10 border border-brand/10">
         <div className="flex flex-col items-center text-center mb-8">
           <img
-            src="/pic/IMG_2488.JPG"
-            alt="Gilly Gift & Craft"
-            width={1280}
-            height={1280}
+            src="/pic/logo_new.JPG"
+            alt="Gilly Studio"
+            width={2000}
+            height={2000}
             className="h-24 w-auto mb-4"
           />
           <h1 className="font-display text-2xl font-bold text-foreground">
