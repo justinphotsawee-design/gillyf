@@ -280,6 +280,46 @@ export async function createPDF(
   const rowStartX =
     (pageWidth - (titleColWidth + colGap + widestBoxesWidth)) / 2;
 
+  // Cut guides: every slot edge extended as a hairline across the whole
+  // frame, so the sheet can be lined up on a paper cutter and trimmed
+  // edge-to-edge. Drawn before the slots — a vertical guide that crosses
+  // another row ends up hidden under that row's artwork instead of
+  // cutting through it.
+  {
+    const frameLeft = margin;
+    const frameRight = pageWidth - margin;
+    const frameTop = pageHeight - margin;
+    const frameBottom = margin;
+    const boxStartX = rowStartX + titleColWidth + colGap;
+    // Only the shared left edge gets a vertical guide (every row is
+    // flush-left there); the rest are horizontal row top/bottom guides.
+    const xs = [boxStartX];
+    const ys = new Set<number>();
+    let y = cursorY;
+    for (const row of ROWS) {
+      ys.add(y);
+      y -= row.heightCm * CM;
+      ys.add(y);
+      y -= rowGap;
+    }
+    for (const gx of xs) {
+      page.drawLine({
+        start: { x: gx, y: frameBottom },
+        end: { x: gx, y: frameTop },
+        thickness: 0.5,
+        color: HAIRLINE,
+      });
+    }
+    for (const gy of ys) {
+      page.drawLine({
+        start: { x: frameLeft, y: gy },
+        end: { x: frameRight, y: gy },
+        thickness: 0.5,
+        color: HAIRLINE,
+      });
+    }
+  }
+
   for (const row of ROWS) {
     const leftW = row.leftWidthCm * CM;
     const rightW = row.rightWidthCm * CM;
